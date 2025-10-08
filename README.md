@@ -27,10 +27,12 @@ If you do not work with the tool HLA\*LA, you can safely ignore everything writt
 
 ## Testing
 
-Run the `unittest` suite via 
+Run the `pytest` suite via 
 ```
-python -m unittest
+pytest test/ -v
 ```
+
+Some HLA-LA related test are unimplemented and are labeled as `SKIPPED`. If there is broader interest, we can implement testing for these methods as well.
 
 ## Usage:
 
