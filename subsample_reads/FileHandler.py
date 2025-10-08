@@ -6,19 +6,10 @@ logger = logging.getLogger(__name__)
 
 
 class FileHandler:
-    """Base class for file handling operations."""
+    """Handle file presence or absence"""
 
     @staticmethod
     def check_file_exists(path: Union[str, Path]) -> None:
-        """
-        Check if a file exists at the given path. Raise FileNotFoundError if not.
-
-        Args:
-            path: Path to the file to check.
-
-        Raises:
-            FileNotFoundError: If the file does not exist.
-        """
         p = Path(path)
         if not p.exists():
             raise FileNotFoundError(f"File not found: {p.absolute()}")
