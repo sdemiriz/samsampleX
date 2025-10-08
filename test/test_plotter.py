@@ -9,7 +9,7 @@ class TestPlotter:
     TEST_BAM = "test/data/test-100bp-10count.bam"
     TEST_BED = "test/data/test-100bp-10count.bed"
 
-    def test_file_not_found_bam(self):
+    def test_file_not_found_bam(self, tmp_path):
         """Test Plotter initialization with nonexistent BAM file."""
         # This should raise FileNotFoundError when trying to load a BAM that doesn't exist
         with pytest.raises(FileNotFoundError):
@@ -18,10 +18,10 @@ class TestPlotter:
                 map_bam=None,
                 out_bam=None,
                 bed=self.TEST_BED,
-                out_plt="test_output.png",
+                out_plt=str(tmp_path / "test_output.png"),
             )
 
-    def test_file_not_found_bed(self):
+    def test_file_not_found_bed(self, tmp_path):
         """Test Plotter initialization with nonexistent BED file."""
         # This should raise FileNotFoundError when trying to load a BED that doesn't exist
         with pytest.raises(FileNotFoundError):
@@ -30,118 +30,118 @@ class TestPlotter:
                 map_bam=None,
                 out_bam=None,
                 bed="tests/DOES_NOT_EXIST.bed",
-                out_plt="test_output.png",
+                out_plt=str(tmp_path / "test_output.png"),
             )
 
-    def test_init_no_bams_provided(self):
+    def test_init_no_bams_provided(self, tmp_path):
         """Test Plotter initialization with no BAM files (should work but have empty bams dict)."""
         plotter = Plotter(
             in_bam=None,
             map_bam=None,
             out_bam=None,
             bed=self.TEST_BED,
-            out_plt="test_output.png",
+            out_plt=str(tmp_path / "test_output.png"),
         )
         # Should initialize but have no BAMs loaded
         assert len(plotter.bams) == 0
         assert len(plotter.colormap) == 0
 
-    def test_init_with_in_bam_only(self):
+    def test_init_with_in_bam_only(self, tmp_path):
         """Test Plotter initialization with only input BAM."""
         plotter = Plotter(
             in_bam=self.TEST_BAM,
             map_bam=None,
             out_bam=None,
             bed=self.TEST_BED,
-            out_plt="test_output.png",
+            out_plt=str(tmp_path / "test_output.png"),
         )
         assert len(plotter.bams) == 1
         assert "in" in plotter.bams
         assert "in" in plotter.colormap
 
-    def test_init_with_map_bam_only(self):
+    def test_init_with_map_bam_only(self, tmp_path):
         """Test Plotter initialization with only mapping BAM."""
         plotter = Plotter(
             in_bam=None,
             map_bam=self.TEST_BAM,
             out_bam=None,
             bed=self.TEST_BED,
-            out_plt="test_output.png",
+            out_plt=str(tmp_path / "test_output.png"),
         )
         assert len(plotter.bams) == 1
         assert "map" in plotter.bams
 
-    def test_init_with_out_bam_only(self):
+    def test_init_with_out_bam_only(self, tmp_path):
         """Test Plotter initialization with only output BAM."""
         plotter = Plotter(
             in_bam=None,
             map_bam=None,
             out_bam=self.TEST_BAM,
             bed=self.TEST_BED,
-            out_plt="test_output.png",
+            out_plt=str(tmp_path / "test_output.png"),
         )
         assert len(plotter.bams) == 1
         assert "out" in plotter.bams
 
-    def test_init_with_in_and_map_bams(self):
+    def test_init_with_in_and_map_bams(self, tmp_path):
         """Test Plotter initialization with input and mapping BAMs."""
         plotter = Plotter(
             in_bam=self.TEST_BAM,
             map_bam=self.TEST_BAM,
             out_bam=None,
             bed=self.TEST_BED,
-            out_plt="test_output.png",
+            out_plt=str(tmp_path / "test_output.png"),
         )
         assert len(plotter.bams) == 2
         assert "in" in plotter.bams
 
-    def test_init_with_in_and_out_bams(self):
+    def test_init_with_in_and_out_bams(self, tmp_path):
         """Test Plotter initialization with input and output BAMs."""
         plotter = Plotter(
             in_bam=self.TEST_BAM,
             map_bam=None,
             out_bam=self.TEST_BAM,
             bed=self.TEST_BED,
-            out_plt="test_output.png",
+            out_plt=str(tmp_path / "test_output.png"),
         )
         assert len(plotter.bams) == 2
         assert "in" in plotter.bams
 
-    def test_init_with_map_and_out_bams(self):
+    def test_init_with_map_and_out_bams(self, tmp_path):
         """Test Plotter initialization with mapping and output BAMs."""
         plotter = Plotter(
             in_bam=None,
             map_bam=self.TEST_BAM,
             out_bam=self.TEST_BAM,
             bed=self.TEST_BED,
-            out_plt="test_output.png",
+            out_plt=str(tmp_path / "test_output.png"),
         )
         assert len(plotter.bams) == 2
         assert "map" in plotter.bams
         assert "out" in plotter.bams
 
-    def test_init_with_all_three_bams(self):
+    def test_init_with_all_three_bams(self, tmp_path):
         """Test Plotter initialization with all three BAM files."""
         plotter = Plotter(
             in_bam=self.TEST_BAM,
             map_bam=self.TEST_BAM,
             out_bam=self.TEST_BAM,
             bed=self.TEST_BED,
-            out_plt="test_output.png",
+            out_plt=str(tmp_path / "test_output.png"),
         )
         assert len(plotter.bams) == 3
         assert "in" in plotter.bams
         assert "map" in plotter.bams
         assert "out" in plotter.bams
 
-    def test_init_with_no_det_flag(self):
+    def test_init_with_no_det_flag(self, tmp_path):
         """Test Plotter initialization with no_det flag."""
         plotter = Plotter(
             in_bam=self.TEST_BAM,
             map_bam=None,
             out_bam=None,
             bed=self.TEST_BED,
-            out_plt="test_output.png",
+            out_plt=str(tmp_path / "test_output.png"),
             no_det=True,
         )
         assert plotter.no_det is True
