@@ -39,6 +39,8 @@ slurm*.out
 
 # Directories
 log/
+benchmarks/outputs/
+benchmarks/gatk-inputs/
 !benchmarks/*.sh
 !publication/*.sh
 
