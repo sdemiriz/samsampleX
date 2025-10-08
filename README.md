@@ -56,7 +56,7 @@ Individual modules (classes) can be tested separately if necessary.
 pytest test/test_<class name>.py -v
 ```
 
-Some HLA-LA related test are unimplemented and are labeled as `SKIPPED`. If there is broader interest, we can implement testing for these methods as well.
+Some HLA-LA related tests are unimplemented and are labeled as `SKIPPED`. If there is broader interest, we can implement testing for these methods as well.
 
 ## Usage:
 
