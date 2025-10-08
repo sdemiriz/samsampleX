@@ -1,11 +1,27 @@
 # SubsampleReads: An Interval Tree Based Non-Uniform Next Generation Sequencing Data Downsampling Toolkit
 
+![Tests](https://github.com/sdemiriz/subsample-reads/actions/workflows/tests.yml/badge.svg)
+
 **Sedat Demiriz<sup>1</sup>, Daniel Taliun<sup>1</sup>**  
 <sup>1</sup>Department of Human Genetics, McGill University
 
-A Python, `pysam` based toolkit for mapping, downsampling, comparing, and plotting BAM files using BED file-defined intervals. Written for NGS data processing and compatible with HLA*LA and its PRG-remapping approach.
+A Python, `pysam`-based toolkit for mapping, downsampling, comparing, and plotting BAM files using BED file-defined intervals. Written for NGS data processing and compatible with HLA*LA and its PRG-remapping approach.
 
-If you do not work with the tool HLA\*LA, you can safely ignore everything written here regarding PRG and back-mapping, how it works, and all related examples.
+If you do not use the tool HLA\*LA, you can safely ignore everything about population reference graphs (PRG) and back-mapping, and all related examples.
+
+## Table of Contents
+- [Installation](#installation)
+- [Testing](#testing)
+- [Usage](#usage)
+  - [1. Mapping](#1-mapping)
+  - [2. Sampling](#2-sampling)
+  - [3. Comparison](#3-comparison)
+  - [4. Plotting](#4-plotting)
+- [Logging](#logging)
+- [Examples](#examples-for-algorithm-demonstration)
+- [Benchmarking](#benchmarking)
+- [Publication](#publication)
+- [Future](#future)
 
 ## Installation
 
@@ -27,9 +43,17 @@ If you do not work with the tool HLA\*LA, you can safely ignore everything writt
 
 ## Testing
 
-Run the `pytest` suite via 
-```
+The project includes a `pytest` suite covering all modules.
+
+### Run all tests
+```bash
 pytest test/ -v
+```
+
+Individual modules (classes) can be tested separately if necessary.
+
+```bash
+pytest test/test_<class name>.py -v
 ```
 
 Some HLA-LA related test are unimplemented and are labeled as `SKIPPED`. If there is broader interest, we can implement testing for these methods as well.
@@ -110,7 +134,7 @@ subsample-reads sample \
 
 ---
 
-### 4. Comparison
+### 3. Comparison
 
 Compare two BAM files to check the back-mapping performance. Searches read names across the two BAM files and outputs before-and-after coordinates side by side. Performs a right join, keeping all read names from `bam-right`. Therefore, it is suggested to use the downsampled BAM for this flag.
 ```bash
@@ -126,6 +150,7 @@ subsample-reads compare [options]
 
 #### Usage:
 ```bash
+subsample-reads compare \
   --bam-left sample1.bam \
   --bam-right sample1-downsampled.bam \
   --out sample1-overlap.tsv
@@ -133,7 +158,7 @@ subsample-reads compare [options]
 
 ---
 
-### 5. Plotting
+### 4. Plotting
 Plot depth of coverage and read count in each interval from BAM and BED files via lineplot and barplot.
 
 ```bash
@@ -166,7 +191,7 @@ subsample-reads plot \
 
 ## Logging
 
-Log files are automatically created in the `log/` directory for each command execution. log filenames contain timestamp and invoked function name. Each log file includes:
+Log files are automatically created in the `log/` directory for each command execution. Log filenames contain timestamp and invoked function name. Each log file includes:
 
 - User command line input for reproducibility
 - Execution time
@@ -176,6 +201,8 @@ Log files are automatically created in the `log/` directory for each command exe
 ---
 
 ## Examples for algorithm demonstration:
+
+This section illustrates how the tools works using human-readable examples.
 
 A Makefile is available at the repository root with the following example workflows. They will run without data downloads, the source data is generated on the fly without the need for external file downloads.
 
@@ -246,7 +273,7 @@ Generates the underlying plots for Figure 1 for comparing `samtools` uniform dow
 
 * Provide BED templates to `map` that contain interval coordinates but not read counts as a "proto-template" that can then be filled out. An example use case would be a scenario when intron and exon regions that are not regularly spaced in the genome that could be downsampled.
 
-* Expand the BED template format to be able to accommodate multiple chromosomal regions or the ability to provide multiple BED templates at the same time and produce a final downsampled BAM file that contains the compbined outputs of all downsamplings.
+* Expand the BED template format to be able to accommodate multiple chromosomal regions or the ability to provide multiple BED templates at the same time and produce a final downsampled BAM file that contains the combined outputs of all downsamplings.
 
 * Tweaks to output file handling where a "prefix" (destination directory, filename start) can be defined and multiple outputs that share the "prefix" can be produced without needing to be explicitly named at the command line. (I think PLINK does this already?) This can help split the `plot` outputs into separate files among other uses.
 
