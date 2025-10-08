@@ -25,6 +25,13 @@ If you do not work with the tool HLA\*LA, you can safely ignore everything writt
   subsample-reads --help
   ```
 
+## Testing
+
+Run the `unittest` suite via 
+```
+python -m unittest
+```
+
 ## Usage:
 
 ### 1. Mapping
@@ -49,7 +56,7 @@ subsample-reads map [options]
 --bed BED [BED ...]         : Specific BED file names (must match number of input BAM files).
 ```
 
-### Example:
+### Usage:
 ```bash
 subsample-reads map \
   --in-bam sample1.bam \
@@ -81,7 +88,7 @@ subsample-reads sample [options]
 --prg [GRCh38 | GRCh37]   : Enable HLA-LA PRG-aware sampling (back-maps PRG reads to chr6 coordinates).
 ```
 
-### Example (Regular sampling):
+### Usage (Regular sampling):
 ```bash
 subsample-reads sample \
   --in-bam sample3.bam \
@@ -89,7 +96,7 @@ subsample-reads sample \
   --out-bam sample3-downsampled.bam
 ```
 
-### Example (HLA-LA PRG mode):
+### Usage (HLA-LA PRG mode):
 ```bash
 subsample-reads sample \
   --prg GRCh38 \
@@ -114,7 +121,7 @@ subsample-reads compare [options]
 --out FILE          : Output file for overlap information (default `out.tsv`).
 ```
 
-### Example:
+### Usage:
 ```bash
   --bam-left sample1.bam \
   --bam-right sample1-downsampled.bam \
@@ -142,7 +149,7 @@ subsample-reads plot [options]
 --no-det          : No details (do not add interval boundaries or legend.)
 ```
 
-### Example:
+### Usage:
 ```bash
 subsample-reads plot \
   --in-bam sample1.bam \
@@ -156,24 +163,18 @@ subsample-reads plot \
 
 ## Logging
 
-Log files are automatically created in the `log/` directory for each command execution. Filenames contain timestamp and invoked function name. Each log file includes:
+Log files are automatically created in the `log/` directory for each command execution. log filenames contain timestamp and invoked function name. Each log file includes:
 
 - User command line input for reproducibility
 - Execution time
 - Detailed error messages and stack traces (if errors occur)
 - Processing status updates
 
-## Testing
+---
 
-Run the `unittest` suite via 
+## Examples for algorightm demonstration:
 
-```
-python -m unittest
-```
-
-## Examples:
-
-A Makefile is available at the repository root with example workflows.
+A Makefile is available at the repository root with example workflows. These will run without data downloads, the source data is generated on the fly without the need for external file downloads.
 
 ```bash
 make run-example
@@ -182,26 +183,32 @@ make algo-demo
 make clean-examples
 ```
 
-A Python `venv` will be created from `requirements.txt` before the tool is run. Everything produced during these steps can be found in the `examples/` directory.
+A Python `venv` will be created from `requirements.txt` before the tool is run. All files used during these steps can be found under `examples/`.
 
-The first two commands will each generate a small example BAM file, and run the full `map` -> `sample` -> `plot` core workflow and demonstrate the commands. The BAM files generated are small enough to be human readable to allow confirmation that the tool works as intended. Each read is 100 bases long with numbered names for readability and falls fully inside 10 intervals each 100 bases long.
+The first two commands each generate a very small example BAM file, then run the full `map` -> `sample` -> `plot` core workflow. The BAM files are small and human readable to allow visual confirmation that the tool works as intended. Each read is 100 bases long with numbered names for readability and falls fully inside 10 intervals each, also 100 bases long.
 
-`run-example` should produce a BAM file that contains only chr6-aligned reads with the plot outputs showing a distinct increasing staircase pattern in both coverage and read count.
+`run-example` produces a BAM file that contains only chr6-aligned reads. Both read count and coverage plots should show distinct staircase patterns.
 
-`run-example-prg` should produce identical plots as `run-example` but the starting BAM file also contains a mix of PRG reads, distinguishable by their read names from chr6-aligned reads. When the tool completes, the downsampled output should contain a mix of chr6-aligned and PRG-aligned reads from the input.
+`run-example-prg` should produce identical plots as `run-example` but the input BAM file also contains a mix of PRG reads, distinguishable by their read names from chr6-aligned reads. When the tool completes, the output should contain a mix of chr6-aligned and PRG-aligned reads from the input.
 
 `algo-demo` will generate a minimal example with a few reads and limited scope for generating an accompanying figure. The output of this rule will list a number of read names that should match those in the figure. **Requires samtools to be available**
 
-`clean-examples` will clean the example directory of all created files as a result of running previous commands.
+`clean-examples` will clean the `examples/` directory of all created files as a result of running previous commands.
 
-## Data Download
+## Benchmarking
+
+### Download required files
 
 ```bash
 make download-files
 ```
-This command will download the default files for the benchmarking process. `HG002.GRCh38.300x.bam` from Genome in A Bottle (GIAB) and `HG00157.bam` from Thousand Genomes (1KG) will be downloaded (>500GB total). **HG00157 is downloaded in CRAM format and is then converted to BAM format and indexed using `samtools` and thus the availability of `samtools` is a requirement.**
+This command will download the default files for the benchmarking process: 
+* `HG002.GRCh38.300x.bam` from Genome in A Bottle (GIAB) and 
+* `HG00157.bam` from Thousand Genomes (1KG) will be downloaded (>500GB total). 
 
-## Benchmarks
+**`samtools` is required becuase HG00157 is downloaded in CRAM format and is then converted to BAM format and indexed.**
+
+### Run benchmarking
 
 ```bash
 make single-interval
@@ -211,9 +218,13 @@ make clean-benchmarks
 
 The `benchmarks/` directory contains benchmark scripts that compares `subsample-reads` against uniform downsampling tools in a single- or multi-interval scenarios.
 
-The default values benchmark performance in a padded HLA region (chr6:25000000-35000000) using a single interval or 1000 intervals. These coordinates and values can be tweaked easily for further benchmarking using the top-level variables in each script.
+The default values benchmark performance in a padded HLA region (chr6:25,000,000-35,000,000) using a single interval or 1000 intervals. These coordinates and values can be tweaked easily for further benchmarking using the top-level variables in each script.
 
-Results are saved to `benchmarks/single-interval-benchmark.txt` and `benchmarks/multi-interval-benchmark.txt` respectively, with timing and memory usage statistics.
+Results are saved to 
+* `benchmarks/single-interval-benchmark.tsv`
+* `benchmarks/multi-interval-benchmark.tsv` 
+
+respectively, with timing and memory usage statistics.
 
 ## Publication
 
@@ -223,7 +234,7 @@ The `publication/` directory contains scripts and data for generating publicatio
 make figure-1
 ```
 
-Generates the underlying plots for figure 1 comparing `subsample-reads` non-uniform downsampling with samtools on HLA region. Produces `figure-1.png` and `figure-1-samtools.png` in the same directory as the script.
+Generates the underlying plots for Figure 1 for comparing `samtools` uniform downsampling against `subsample-reads` non-uniform downsampling.
 
 
 ## Future
