@@ -58,7 +58,8 @@ subsample-reads map [options]
 --bed BED [BED ...]         : Specific BED file names (must match number of input BAM files).
 ```
 
-### Usage:
+#### Usage:
+
 ```bash
 subsample-reads map \
   --in-bam sample1.bam \
@@ -90,7 +91,7 @@ subsample-reads sample [options]
 --prg [GRCh38 | GRCh37]   : Enable HLA-LA PRG-aware sampling (back-maps PRG reads to chr6 coordinates).
 ```
 
-### Usage (Regular sampling):
+#### Usage (Regular sampling):
 ```bash
 subsample-reads sample \
   --in-bam sample3.bam \
@@ -98,7 +99,7 @@ subsample-reads sample \
   --out-bam sample3-downsampled.bam
 ```
 
-### Usage (HLA-LA PRG mode):
+#### Usage (HLA-LA PRG mode):
 ```bash
 subsample-reads sample \
   --prg GRCh38 \
@@ -123,7 +124,7 @@ subsample-reads compare [options]
 --out FILE          : Output file for overlap information (default `out.tsv`).
 ```
 
-### Usage:
+#### Usage:
 ```bash
   --bam-left sample1.bam \
   --bam-right sample1-downsampled.bam \
@@ -151,7 +152,7 @@ subsample-reads plot [options]
 --no-det          : No details (do not add interval boundaries or legend.)
 ```
 
-### Usage:
+#### Usage:
 ```bash
 subsample-reads plot \
   --in-bam sample1.bam \
@@ -174,9 +175,9 @@ Log files are automatically created in the `log/` directory for each command exe
 
 ---
 
-## Examples for algorightm demonstration:
+## Examples for algorithm demonstration:
 
-A Makefile is available at the repository root with example workflows. These will run without data downloads, the source data is generated on the fly without the need for external file downloads.
+A Makefile is available at the repository root with the following example workflows. They will run without data downloads, the source data is generated on the fly without the need for external file downloads.
 
 ```bash
 make run-example
@@ -205,10 +206,12 @@ The first two commands each generate a very small example BAM file, then run the
 make download-files
 ```
 This command will download the default files for the benchmarking process: 
-* `HG002.GRCh38.300x.bam` from Genome in A Bottle (GIAB) and 
-* `HG00157.bam` from Thousand Genomes (1KG) will be downloaded (>500GB total). 
+* `HG002.GRCh38.300x.bam` from Genome in A Bottle (GIAB)
+* `HG00157.bam` from Thousand Genomes (1KG) 
 
-**`samtools` is required becuase HG00157 is downloaded in CRAM format and is then converted to BAM format and indexed.**
+will be downloaded **(>500GB total)**. 
+
+**`samtools` is required because HG00157 is downloaded in CRAM format and is then converted to BAM format and indexed.**
 
 ### Run benchmarking
 
@@ -230,7 +233,7 @@ respectively, with timing and memory usage statistics.
 
 ## Publication
 
-The `publication/` directory contains scripts and data for generating publication figures.
+The `publication/` directory contains scripts and data for generating publication figures. This also requires data download from the step above.
 
 ```bash
 make figure-1
