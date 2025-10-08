@@ -43,5 +43,4 @@ log/
 !publication/*.sh
 
 # Test files
-!tests/*.bam
-!tests/*.bam.bai
+!test/data/*
