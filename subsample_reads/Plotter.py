@@ -30,14 +30,13 @@ class Plotter(FileHandler):
             in_bam:   Path to input/original BAM file.
             map_bam:  Path to mapping BAM file.
             out_bam:  Path to downsampled BAM file.
-            bed_dir:  Directory to fetch a random BED file from.
-            bed:      Specific BED file to plot.
+            bed:      Path to BED file to plot.
             out_plt:  Path for the output plot.
-            no_det:     Whether to include details in plots (disable for large regions)
+            no_det:   Whether to include details in plots (disable for large regions)
         """
         logger.info("Plotter - Initialize")
 
-        self.intervals = Intervals(bed_dir=None, bed_file=bed)
+        self.intervals = Intervals(bed_file=bed)
         self.boundaries = set(
             list(self.intervals.bed["start"]) + list(self.intervals.bed["end"])
         )

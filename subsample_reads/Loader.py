@@ -81,7 +81,6 @@ class Loader(FileHandler):
 
     def run_sampling(
         self,
-        bed_dir: str,
         bed_file: str,
         main_seed: int,
         out_bam: str,
@@ -97,7 +96,7 @@ class Loader(FileHandler):
         self.out_bam = Loader(bam_path=out_bam, template=self.bam)
 
         # Generate user-provided intervals, and a bucket and seed per interval
-        self.intervals = self.get_intervals(bed_dir=bed_dir, bed_file=bed_file)
+        self.intervals = self.get_intervals(bed_file=bed_file)
         self.seeds = self.get_interval_seeds(main_seed=self.main_seed)
         self.buckets = self.setup_buckets()
 
@@ -288,12 +287,12 @@ class Loader(FileHandler):
             usecols=["Name", "FASTAID"],  # type: ignore
         )
 
-    def get_intervals(self, bed_dir: str, bed_file: str) -> Intervals:
+    def get_intervals(self, bed_file: str) -> Intervals:
         """
         Set up Interval instances based on BED-provided coordinates
         """
         logger.info("Loader - Ingest Intervals from BED files")
-        return Intervals(bed_dir=bed_dir, bed_file=bed_file)
+        return Intervals(bed_file=bed_file)
 
     def get_interval_seeds(self, main_seed: int) -> np.ndarray:
         """

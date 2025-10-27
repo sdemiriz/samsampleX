@@ -336,7 +336,6 @@ class TestLoader:
 
             # Run sampling in regular (non-HLA-LA) mode
             loader.run_sampling(
-                bed_dir=None,
                 bed_file="test/data/test-100bp-10count.bed",
                 main_seed=42,
                 out_bam=output_bam,
@@ -372,9 +371,7 @@ class TestLoader:
         loader = Loader(bam_path=self.TEST_BAM)
 
         # Test getting intervals from BED file
-        intervals = loader.get_intervals(
-            bed_dir=None, bed_file="test/data/test-100bp-10count.bed"
-        )
+        intervals = loader.get_intervals(bed_file="test/data/test-100bp-10count.bed")
 
         # Should return an Intervals object
         from subsample_reads.Intervals import Intervals
@@ -389,9 +386,7 @@ class TestLoader:
         loader = Loader(bam_path=self.TEST_BAM)
 
         # Create some dummy intervals for testing
-        intervals = loader.get_intervals(
-            bed_dir=None, bed_file="test/data/test-100bp-10count.bed"
-        )
+        intervals = loader.get_intervals(bed_file="test/data/test-100bp-10count.bed")
 
         # Set intervals attribute
         loader.intervals = intervals
@@ -412,9 +407,7 @@ class TestLoader:
         loader = Loader(bam_path=self.TEST_BAM)
 
         # Setup intervals first
-        intervals = loader.get_intervals(
-            bed_dir=None, bed_file="test/data/test-100bp-10count.bed"
-        )
+        intervals = loader.get_intervals(bed_file="test/data/test-100bp-10count.bed")
         loader.intervals = intervals
 
         # Setup buckets - returns a list, not a dict
@@ -435,9 +428,7 @@ class TestLoader:
         loader = Loader(bam_path=self.TEST_BAM)
 
         # Need to set intervals attribute for get_mapped_reads
-        intervals = loader.get_intervals(
-            bed_dir=None, bed_file="test/data/test-100bp-10count.bed"
-        )
+        intervals = loader.get_intervals(bed_file="test/data/test-100bp-10count.bed")
         loader.intervals = intervals
 
         # Get mapped reads in a range
@@ -539,9 +530,7 @@ class TestLoader:
         loader = Loader(bam_path=self.TEST_BAM)
 
         # Setup complete sampling environment
-        intervals = loader.get_intervals(
-            bed_dir=None, bed_file="test/data/test-100bp-10count.bed"
-        )
+        intervals = loader.get_intervals(bed_file="test/data/test-100bp-10count.bed")
         loader.intervals = intervals
 
         # Get seeds
@@ -578,9 +567,7 @@ class TestLoader:
         loader = Loader(bam_path=self.TEST_BAM)
 
         # Setup intervals and buckets
-        intervals = loader.get_intervals(
-            bed_dir=None, bed_file="test/data/test-100bp-10count.bed"
-        )
+        intervals = loader.get_intervals(bed_file="test/data/test-100bp-10count.bed")
         loader.intervals = intervals
         buckets = loader.setup_buckets()  # Returns a list
 

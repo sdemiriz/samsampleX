@@ -88,7 +88,6 @@ def sample_mode(args):
             # HLA-LA mode: use PRG-specific sampling with specified genome build
             in_bam.run_sampling(
                 hlala_mode=True,
-                bed_dir=args.bed_dir,
                 bed_file=args.bed,
                 main_seed=args.seed,
                 out_bam=args.out_bam,
@@ -98,7 +97,6 @@ def sample_mode(args):
             # Regular mode: use standard sampling
             in_bam.run_sampling(
                 hlala_mode=False,
-                bed_dir=args.bed_dir,
                 bed_file=args.bed,
                 main_seed=args.seed,
                 out_bam=args.out_bam,
@@ -199,11 +197,12 @@ def main():
     mapper.add_argument(
         "--end", required=True, help="End coordinate of the region to map."
     )
-    bed_output = mapper.add_mutually_exclusive_group()
-    bed_output.add_argument(
-        "-d", "--bed-dir", default="bed/", help="Directory for output BED files."
+    mapper.add_argument(
+        "--bed-dir",
+        default="bed/",
+        help="Directory for output BED files.",
     )
-    bed_output.add_argument(
+    mapper.add_argument(
         "--bed",
         nargs="+",
         help="BED file names (must match number of input BAM files).",
@@ -226,13 +225,7 @@ def main():
     sample.add_argument(
         "--in-bam", required=True, help="Target BAM file to downsample."
     )
-    bed_selection = sample.add_mutually_exclusive_group()
-    bed_selection.add_argument(
-        "--bed-dir", default="bed/", help="Directory to fetch BED files from."
-    )
-    bed_selection.add_argument(
-        "--bed", default=None, help="Specify one BED file to downsample from."
-    )
+    sample.add_argument("--bed", required=True, help="BED file to downsample from.")
     sample.add_argument(
         "--seed", default=42, type=int, help="Seed for random downsampling."
     )

@@ -1,8 +1,5 @@
 from logging import info
-from pathlib import Path
-from typing import Optional
 
-import numpy as np
 import pandas as pd
 from intervaltree import Interval, IntervalTree
 
@@ -11,14 +8,14 @@ from subsample_reads.FileHandler import FileHandler
 
 class Intervals(FileHandler):
 
-    def __init__(self, bed_dir: Optional[str], bed_file: str) -> None:
+    def __init__(self, bed_file: str) -> None:
         """
         Class constructor: read, validate BED and populate IntervalTree
         """
         info(f"Intervals - Initialize Intervals")
 
         # Read BED file
-        self.bed_path = self.get_bed_path(bed_dir=bed_dir, bed_file=bed_file)
+        self.bed_path = self.get_bed_path(bed_file=bed_file)
         self.bed = self.get_bed(bed_path=self.bed_path)
 
         # Get contig, start, and end from BED
@@ -31,23 +28,18 @@ class Intervals(FileHandler):
 
         info(f"Intervals - Complete initialize Intervals")
 
-    def get_bed_path(self, bed_dir: str, bed_file: str) -> str:
+    def get_bed_path(self, bed_file: str) -> str:
         """
-        Decide which BED files to read in based on provided file list or count
+        Read and validate the provided BED file path
         """
-        info("Intervals - Handle BED files")
+        info("Intervals - Handle BED file")
 
-        if bed_file:
-            super().check_file_exists(path=bed_file)
-            bed_path = bed_file
-            info(f"Intervals - Received BED file path {bed_file}")
-        elif bed_dir:
-            bed_path = np.random.choice(a=list(Path(bed_dir).glob("*.bed")))  # type: ignore
-            info(f"Intervals - Selected {bed_file} random BED file from {bed_dir}")
-        else:
-            raise ValueError("No BED file or directory provided")
+        if not bed_file:
+            raise ValueError("No BED file provided")
 
-        return bed_path
+        super().check_file_exists(path=bed_file)
+        info(f"Intervals - Received BED file path {bed_file}")
+        return bed_file
 
     def __len__(self) -> int:
         return len(self.tree)

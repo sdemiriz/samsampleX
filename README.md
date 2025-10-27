@@ -102,10 +102,7 @@ subsample-reads sample [options]
 
 # Required 
 --in-bam BAM              : BAM file to subsample.
-
-# Mutually exclusive
---bed-dir DIR             : Directory to fetch a random BED file from (default: `bed/`).
---bed BED                 : Specific BED file to use for sampling.
+--bed BED                 : BED file to use for sampling.
 
 # Optional
 --seed SEED               : Random seed for reproducibility (default: 42).

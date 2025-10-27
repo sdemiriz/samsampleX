@@ -19,11 +19,11 @@ class TestIntervals:
     def test_file_not_found(self):
         """Test Intervals with nonexistent BED file."""
         with pytest.raises(FileNotFoundError):
-            Intervals(bed_dir=None, bed_file="DOES_NOT_EXIST.bed")
+            Intervals(bed_file="DOES_NOT_EXIST.bed")
 
     def test_init_valid_bed_file(self):
         """Test Intervals initialization with valid BED file."""
-        intervals = Intervals(bed_dir=None, bed_file=self.TEST_BED)
+        intervals = Intervals(bed_file=self.TEST_BED)
 
         # Verify basic properties are set
         assert intervals.contig is not None
@@ -34,7 +34,7 @@ class TestIntervals:
 
     def test_init_with_chr6_bed(self):
         """Test Intervals initialization with chr6 test BED."""
-        intervals = Intervals(bed_dir=None, bed_file=self.TEST_BED_VALID)
+        intervals = Intervals(bed_file=self.TEST_BED_VALID)
 
         # Verify values from the actual test file
         assert intervals.contig == "chr6"
@@ -44,7 +44,7 @@ class TestIntervals:
 
     def test_bed_dataframe_columns(self):
         """Test that BED DataFrame has expected columns."""
-        intervals = Intervals(bed_dir=None, bed_file=self.TEST_BED)
+        intervals = Intervals(bed_file=self.TEST_BED)
 
         expected_cols = ["contig", "start", "end", "read_count", "fraction"]
         assert list(intervals.bed.columns) == expected_cols
@@ -52,27 +52,27 @@ class TestIntervals:
     def test_non_unique_contigs(self):
         """Test that multiple contigs in BED file raises AssertionError."""
         with pytest.raises(AssertionError) as exc_info:
-            Intervals(bed_dir=None, bed_file=self.TEST_BED_MULTI_CONTIG)
+            Intervals(bed_file=self.TEST_BED_MULTI_CONTIG)
 
         assert "Not all contig values in BED file identical" in str(exc_info.value)
 
     def test_overlapping_intervals(self):
         """Test that overlapping intervals raise AssertionError."""
         with pytest.raises(AssertionError) as exc_info:
-            Intervals(bed_dir=None, bed_file=self.TEST_BED_OVERLAPPING)
+            Intervals(bed_file=self.TEST_BED_OVERLAPPING)
 
         assert "BED file contains overlapping intervals" in str(exc_info.value)
 
     def test_no_bed_provided(self):
-        """Test that providing neither file nor directory raises ValueError."""
+        """Test that providing no file raises ValueError."""
         with pytest.raises(ValueError) as exc_info:
-            Intervals(bed_dir=None, bed_file=None)
+            Intervals(bed_file=None)
 
-        assert "No BED file or directory provided" in str(exc_info.value)
+        assert "No BED file provided" in str(exc_info.value)
 
     def test_len_method(self):
         """Test __len__ method returns number of intervals."""
-        intervals = Intervals(bed_dir=None, bed_file=self.TEST_BED)
+        intervals = Intervals(bed_file=self.TEST_BED)
 
         # __len__ should return the number of intervals in the tree
         assert len(intervals) > 0
@@ -80,7 +80,7 @@ class TestIntervals:
 
     def test_get_limits(self):
         """Test get_limits returns correct start and end."""
-        intervals = Intervals(bed_dir=None, bed_file=self.TEST_BED_VALID)
+        intervals = Intervals(bed_file=self.TEST_BED_VALID)
 
         # Verify start is minimum and end is maximum from BED
         assert intervals.start == intervals.bed["start"].min()
@@ -88,7 +88,7 @@ class TestIntervals:
 
     def test_tree_content(self):
         """Test that IntervalTree contains correct intervals with data."""
-        intervals = Intervals(bed_dir=None, bed_file=self.TEST_BED)
+        intervals = Intervals(bed_file=self.TEST_BED)
 
         # Verify tree has the same number of intervals as BED file
         assert len(intervals.tree) == len(intervals.bed)
@@ -114,7 +114,7 @@ class TestIntervals:
 
     def test_bed_data_types(self):
         """Test BED DataFrame has correct data types."""
-        intervals = Intervals(bed_dir=None, bed_file=self.TEST_BED)
+        intervals = Intervals(bed_file=self.TEST_BED)
 
         # Verify data types are correct
         assert intervals.bed["contig"].dtype == object  # string type
@@ -125,7 +125,7 @@ class TestIntervals:
 
     def test_tree_intervals_sorted(self):
         """Test that IntervalTree intervals are properly sorted."""
-        intervals = Intervals(bed_dir=None, bed_file=self.TEST_BED_VALID)
+        intervals = Intervals(bed_file=self.TEST_BED_VALID)
 
         # Convert tree to sorted list
         sorted_intervals = sorted(intervals.tree)

@@ -38,7 +38,7 @@ run-example: PLT = $(EXAMPLE_DIR)/example-out.png
 run-example: example example-map
 	
 	@echo "[STEP 1] Mapping example..."
-	$(SR) map --in-bam $(MAP_BAM) --contig chr1 --start 100 --end 1100 --interval-count 10 --bed-dir $(EXAMPLE_DIR)
+	$(SR) map --in-bam $(MAP_BAM) --contig chr1 --start 100 --end 1100 --interval-count 10 --bed $(BED)
 
 	@echo "[STEP 2] Sampling example..."
 	$(SR) sample --in-bam $(IN_BAM) --bed $(BED) --out-bam $(OUT_BAM)
@@ -54,7 +54,7 @@ run-example-prg: PLT = $(EXAMPLE_DIR)/example-prg-out.png
 run-example-prg: example-prg example-map-prg
 
 	@echo "[STEP 1] Mapping PRG example..."
-	$(SR) map --in-bam $(MAP_BAM) --contig chr6 --start 29941260 --end 29942260 --interval-count 10 --bed-dir $(EXAMPLE_DIR)
+	$(SR) map --in-bam $(MAP_BAM) --contig chr6 --start 29941260 --end 29942260 --interval-count 10 --bed $(BED)
 
 	@echo "[STEP 2] Sampling PRG example..."
 	$(SR) sample --prg GRCh38 --in-bam $(IN_BAM) --bed $(BED) --out-bam $(OUT_BAM)
