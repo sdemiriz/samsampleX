@@ -78,7 +78,6 @@ subsample-reads map [options]
 --interval-count COUNT      : Specify number of intervals to divide the mapping region.
 
 # Optional
---bed-dir DIR               : Directory for output BED files (default: bed/).
 --bed BED [BED ...]         : Specific BED file names (must match number of input BAM files).
 ```
 
