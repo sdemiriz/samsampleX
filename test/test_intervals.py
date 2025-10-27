@@ -4,7 +4,7 @@ Tests for Intervals class.
 
 import pytest
 import numpy as np
-from subsample_reads.Intervals import Intervals
+from samsampleX.Intervals import Intervals
 
 
 class TestIntervals:

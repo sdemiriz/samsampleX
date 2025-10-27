@@ -5,7 +5,7 @@ Tests for Loader class.
 import pytest
 import pysam
 from pathlib import Path
-from subsample_reads.Loader import Loader
+from samsampleX.Loader import Loader
 
 
 class TestLoader:
@@ -374,7 +374,7 @@ class TestLoader:
         intervals = loader.get_intervals(bed_file="test/data/test-100bp-10count.bed")
 
         # Should return an Intervals object
-        from subsample_reads.Intervals import Intervals
+        from samsampleX.Intervals import Intervals
 
         assert isinstance(intervals, Intervals)
         assert len(intervals) > 0

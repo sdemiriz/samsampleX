@@ -4,7 +4,7 @@ Tests for FileHandler class.
 
 import pytest
 from pathlib import Path
-from subsample_reads.FileHandler import FileHandler
+from samsampleX.FileHandler import FileHandler
 
 
 class TestFileHandler:

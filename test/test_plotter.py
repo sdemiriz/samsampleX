@@ -1,5 +1,5 @@
 import pytest
-from subsample_reads.Plotter import Plotter
+from samsampleX.Plotter import Plotter
 
 
 class TestPlotter:

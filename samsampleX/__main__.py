@@ -7,10 +7,10 @@ import argparse
 from datetime import datetime as dt
 from logging import INFO, basicConfig, getLogger
 
-from subsample_reads.Loader import Loader
-from subsample_reads.Mapper import Mapper
-from subsample_reads.Plotter import Plotter
-from subsample_reads.Comparator import Comparator
+from samsampleX.Loader import Loader
+from samsampleX.Mapper import Mapper
+from samsampleX.Plotter import Plotter
+from samsampleX.Comparator import Comparator
 
 # Ensure log directory exists
 os.makedirs("log", exist_ok=True)
@@ -28,11 +28,11 @@ def configure_logging(mode):
         style="{",
         datefmt="%H:%M:%S",
     )
-    logger = getLogger("subsample_reads")
+    logger = getLogger("samsampleX")
 
     # Log the command line invocation for reproducibility
     command_line = sys.argv.copy()
-    command_line[0] = "subsample-reads"
+    command_line[0] = "samsampleX"
     command_line = " ".join(command_line)
     logger.info(f"Command: {command_line}")
     logger.info("Begin log")
@@ -161,9 +161,9 @@ def plotter_mode(args):
 
 
 def main():
-    """Main CLI entry point for subsample-reads toolkit."""
+    """Main CLI entry point for samsampleX toolkit."""
     parser = argparse.ArgumentParser(
-        prog="python -m subsample-reads",
+        prog="samsampleX",
         description="Toolkit for mapping, sampling, and plotting BAM files.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )

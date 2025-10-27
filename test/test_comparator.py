@@ -4,7 +4,7 @@ Tests for Comparator class.
 
 import pytest
 import pandas as pd
-from subsample_reads.Comparator import Comparator
+from samsampleX.Comparator import Comparator
 
 
 class TestComparator:

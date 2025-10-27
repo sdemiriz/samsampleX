@@ -5,7 +5,7 @@ Tests for Mapper class.
 import pytest
 import pandas as pd
 from pathlib import Path
-from subsample_reads.Mapper import Mapper
+from samsampleX.Mapper import Mapper
 
 
 class TestMapper:
