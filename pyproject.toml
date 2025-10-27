@@ -3,12 +3,12 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["subsample_reads*"]
+include = ["samsampleX*"]
 
 [project]
-name = "subsample-reads"
+name = "samsampleX"
 version = "0.1.0"
-description = "Toolkit for mapping, non-uniform sampling, and plotting BAM files"
+description = "Toolkit for mapping, non-uniform downsampling, and plotting BAM files"
 requires-python = ">=3.11"
 dependencies = [
     "matplotlib>=3.10.0",
@@ -22,4 +22,4 @@ dependencies = [
 ]
 
 [project.scripts]
-subsample-reads = "subsample_reads.__main__:main"
+samsampleX = "samsampleX.__main__:main"

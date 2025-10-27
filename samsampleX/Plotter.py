@@ -5,9 +5,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 
-from subsample_reads.Loader import Loader
-from subsample_reads.Intervals import Intervals
-from subsample_reads.FileHandler import FileHandler
+from samsampleX.Loader import Loader
+from samsampleX.Intervals import Intervals
+from samsampleX.FileHandler import FileHandler
 
 logger = logging.getLogger(__name__)
 

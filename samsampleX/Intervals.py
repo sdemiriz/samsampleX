@@ -3,7 +3,7 @@ from logging import info
 import pandas as pd
 from intervaltree import Interval, IntervalTree
 
-from subsample_reads.FileHandler import FileHandler
+from samsampleX.FileHandler import FileHandler
 
 
 class Intervals(FileHandler):

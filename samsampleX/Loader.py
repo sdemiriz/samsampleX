@@ -8,8 +8,8 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from subsample_reads.Intervals import Intervals
-from subsample_reads.FileHandler import FileHandler
+from samsampleX.Intervals import Intervals
+from samsampleX.FileHandler import FileHandler
 
 
 logger = logging.getLogger(__name__)

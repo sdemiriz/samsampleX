@@ -4,8 +4,8 @@ from typing import Optional
 
 import pandas as pd
 
-from subsample_reads.Loader import Loader
-from subsample_reads.FileHandler import FileHandler
+from samsampleX.Loader import Loader
+from samsampleX.FileHandler import FileHandler
 
 logger = logging.getLogger(__name__)
 

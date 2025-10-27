@@ -4,7 +4,7 @@ import pysam
 import tempfile
 import pandas as pd
 
-from subsample_reads.Loader import Loader
+from samsampleX.Loader import Loader
 
 
 class Comparator:
