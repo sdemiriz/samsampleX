@@ -13,7 +13,7 @@ module load sambamba
 
 # Script to compare the runtime of different downsampling approach from various tools
 # Assumes GATK, samtools, and sambamba are installed and available
-# Assumes Python is available and subsample-reads hass all dependencies installed in a virtual environment
+# Assumes Python is available and samsampleX hass all dependencies installed in a virtual environment
 
 CHR=chr6
 START=25000000
@@ -58,14 +58,14 @@ echo "Benchmarking sambamba..."
 SAMBAMBA=$OUTPUTS/single-interval-sambamba.log
 env time -o $SAMBAMBA -v sambamba view -s $SEED.1 $INPUT_BAM $CHR:$START-$END -o $OUTPUTS/single-interval-sambamba.bam
 
-# subsample-reads mapping is also done outside of the benchmarking process
-# Assumes subsample-reads is installed and available
+# samsampleX mapping is also done outside of the benchmarking process
+# Assumes samsampleX is installed and available
 TEMPLATE=$OUTPUTS/single-interval-benchmark.bed
-subsample-reads map --in-bam $INPUT_BAM --contig $CHR --start $START --end $END --interval-count 1 --bed $TEMPLATE
+samsampleX map --in-bam $INPUT_BAM --contig $CHR --start $START --end $END --interval-count 1 --bed $TEMPLATE
 
-echo "Benchmarking subsample-reads..."
-SUBSAMPLE_READS=$OUTPUTS/single-interval-subsample-reads.log
-env time -o $SUBSAMPLE_READS -v subsample-reads sample --seed $SEED --in-bam $INPUT_BAM --bed $TEMPLATE --out-bam $OUTPUTS/single-interval-subsample-reads.bam
+echo "Benchmarking samsampleX..."
+SUBSAMPLE_READS=$OUTPUTS/single-interval-samsampleX.log
+env time -o $SUBSAMPLE_READS -v samsampleX sample --seed $SEED --in-bam $INPUT_BAM --bed $TEMPLATE --out-bam $OUTPUTS/single-interval-samsampleX.bam
 
 # Get last value in line from grepped file
 get_stat(){
@@ -83,7 +83,7 @@ make_table() {
     # echo "GATK DownsampleByDuplicateSet	$(get_stat User $GATK_DOWN_BY_DUP_SET)	$(get_stat System $GATK_DOWN_BY_DUP_SET)	$(get_stat wall $GATK_DOWN_BY_DUP_SET)  $(get_stat Maximum $GATK_DOWN_BY_DUP_SET)KB" >> $OUTPUT
     echo "samtools	$(get_stat User $SAMTOOLS)	$(get_stat System $SAMTOOLS)	$(get_stat wall $SAMTOOLS)   $(get_stat Maximum $SAMTOOLS)KB" >> $OUTPUT
     echo "sambamba	$(get_stat User $SAMBAMBA)	$(get_stat System $SAMBAMBA)	$(get_stat wall $SAMBAMBA)  $(get_stat Maximum $SAMBAMBA)KB" >> $OUTPUT
-    echo "subsample-reads	$(get_stat User $SUBSAMPLE_READS)	$(get_stat System $SUBSAMPLE_READS)	$(get_stat wall $SUBSAMPLE_READS) $(get_stat Maximum $SUBSAMPLE_READS)KB" >> $OUTPUT
+    echo "samsampleX	$(get_stat User $SUBSAMPLE_READS)	$(get_stat System $SUBSAMPLE_READS)	$(get_stat wall $SUBSAMPLE_READS) $(get_stat Maximum $SUBSAMPLE_READS)KB" >> $OUTPUT
 }
 
 make_table
