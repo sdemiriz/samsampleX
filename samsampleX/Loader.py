@@ -100,21 +100,16 @@ class Loader(FileHandler):
         self.seeds = self.get_interval_seeds(main_seed=self.main_seed)
         self.buckets = self.setup_buckets()
 
-        # Pre-compute interval arrays for overlap detection
-        self.interval_starts = np.array(
-            [interval.begin for interval in self.intervals.tree]
-        )
-        self.interval_ends = np.array(
-            [interval.end for interval in self.intervals.tree]
-        )
+        self.interval_starts = self.intervals.interval_starts
+        self.interval_ends = self.intervals.interval_ends
 
-        # Pad the interval range by 1000bp to account for overhangs
-        overhang = 1000
-        region_start, region_end = self.intervals.start, self.intervals.end
-        interval_range = (
-            region_start - overhang,
-            region_end + overhang,
-        )
+        # # Pad the interval range by 1000bp to account for overhangs
+        # overhang = 1000
+        # region_start, region_end = self.intervals.start, self.intervals.end
+        # interval_range = (
+        #     region_start - overhang,
+        #     region_end + overhang,
+        # )
 
         # HLA-LA remaps reads to PRG contigs, here we map them back to chr6
         if hlala_mode:
@@ -145,28 +140,49 @@ class Loader(FileHandler):
 
                 if self.overlap(
                     read_coords=read_coords,
-                    int_coords=interval_range,
+                    int_coords=(self.interval_starts[i], self.interval_ends[i]),
                 ):
                     self.add_read_to_bucket(read=r_chr6, buckets=self.buckets)
 
         # If we are not dealing with HLA-LA output, no need for mapback
         else:
-            mapped_reads = self.get_mapped_reads(start=region_start, end=region_end)
-            mapped_read_count = sum(
-                1 for _ in self.get_mapped_reads(start=region_start, end=region_end)
-            )
 
-            for r in tqdm(
-                iterable=mapped_reads,
-                desc="Processed",
-                unit=" mapped reads",
-                total=mapped_read_count,
-            ):
-                self.add_read_to_bucket(read=r, buckets=self.buckets)
+            for i, interval in enumerate(self.intervals.tree):
+                logger.info(
+                    f"Loader - Counting reads in interval [{interval.begin}-{interval.end}]"
+                )
+                mapped_read_count = sum(
+                    1
+                    for _ in self.get_mapped_reads(
+                        start=self.interval_starts[i], end=self.interval_ends[i]
+                    )
+                )
+                logger.info(
+                    f"Loader - Sampling {interval.data} reads from interval [{interval.begin}-{interval.end}] with {mapped_read_count} reads"
+                )
+                self.buckets[i] = np.random.choice(
+                    a=np.arange(mapped_read_count), size=interval.data, replace=False
+                )
 
         # After reads have been sorted into buckets, sample from them and write to file
-        self.sample_reads_from_buckets()
-        self.write_reads(bam=self.out_bam)
+        for i, interval in enumerate(self.intervals.tree):
+            logger.info(
+                f"Loader - Fetching reads from interval [{interval.begin}-{interval.end}]"
+            )
+            reads = []
+            for j, r in enumerate(
+                self.get_mapped_reads(
+                    start=self.interval_starts[i], end=self.interval_ends[i]
+                )
+            ):
+                if j in self.buckets[i]:
+                    reads.append(r)
+
+            for r in reads:
+                self.out_bam.bam.write(read=r)
+
+        self.out_bam.close()
+        self.sort_and_index()
 
     def setup_mapback(self, genome_build: str) -> None:
         """

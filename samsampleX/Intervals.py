@@ -1,5 +1,6 @@
 from logging import info
 
+import numpy as np
 import pandas as pd
 from intervaltree import Interval, IntervalTree
 
@@ -25,6 +26,10 @@ class Intervals(FileHandler):
         # Build IntervalTree from BED
         self.populate_tree()
         self.validate()
+
+        # Pre-compute interval arrays for overlap detection
+        self.interval_starts = np.array([interval.begin for interval in self.tree])
+        self.interval_ends = np.array([interval.end for interval in self.tree])
 
         info(f"Intervals - Complete initialize Intervals")
 

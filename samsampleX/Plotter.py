@@ -163,13 +163,13 @@ class Plotter(FileHandler):
         logger.info("Plotter - Add axes, title, legend")
 
         # Annotations for line plot (left subplot)
-        ax_line.set_title("Coverage Depth")
+        ax_line.set_title("Depth of coverage in region")
         ax_line.set_xlabel("Chromosomal coordinate")
         ax_line.set_ylabel("Depth of coverage")
         ax_line.margins(y=0.1)
 
         # Annotations for bar plot (right subplot)
-        ax_bar.set_title("Read Counts per Interval")
+        ax_bar.set_title("Read count per interval")
         ax_bar.set_xlabel("Chromosomal coordinate")
         ax_bar.set_ylabel("Read count")
         ax_bar.margins(y=0.1)
