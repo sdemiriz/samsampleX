@@ -10,6 +10,7 @@ from logging import INFO, basicConfig, getLogger
 from samsampleX.Loader import Loader
 from samsampleX.Mapper import Mapper
 from samsampleX.Plotter import Plotter
+from samsampleX.Sampler import Sampler
 from samsampleX.Comparator import Comparator
 
 # Ensure log directory exists
@@ -81,29 +82,26 @@ def sample_mode(args):
     try:
         start_time = time.time()
 
-        in_bam = Loader(bam_path=args.in_bam)
-
         # Determine if we're in HLA-LA mode based on --prg flag
         if args.prg:
-            # HLA-LA mode: use PRG-specific sampling with specified genome build
-            in_bam.run_sampling(
+            sampler = Sampler(bam_path=args.in_bam, bed_file=args.bed)
+            sampler.run_sampling(
                 hlala_mode=True,
-                bed_file=args.bed,
                 main_seed=args.seed,
                 out_bam=args.out_bam,
                 genome_build=args.prg,
             )
         else:
             # Regular mode: use standard sampling
-            in_bam.run_sampling(
+            sampler = Sampler(bam_path=args.in_bam, bed_file=args.bed)
+            sampler.run_sampling(
                 hlala_mode=False,
-                bed_file=args.bed,
                 main_seed=args.seed,
                 out_bam=args.out_bam,
             )
 
-        in_bam.close()
         logger.info("End log\n")
+
     except Exception as e:
         logger.error(f"Sample - Exception encountered. Details:\n{e}", exc_info=True)
         raise e
