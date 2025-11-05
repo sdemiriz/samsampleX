@@ -11,6 +11,7 @@ from samsampleX.Loader import Loader
 from samsampleX.Mapper import Mapper
 from samsampleX.Plotter import Plotter
 from samsampleX.Sampler import Sampler
+from samsampleX.hlaSampler import hlaSampler
 from samsampleX.Comparator import Comparator
 
 # Ensure log directory exists
@@ -84,9 +85,8 @@ def sample_mode(args):
 
         # Determine if we're in HLA-LA mode based on --prg flag
         if args.prg:
-            sampler = Sampler(bam_path=args.in_bam, bed_file=args.bed)
+            sampler = hlaSampler(bam_path=args.in_bam, bed_file=args.bed)
             sampler.run_sampling(
-                hlala_mode=True,
                 main_seed=args.seed,
                 out_bam=args.out_bam,
                 genome_build=args.prg,
@@ -95,7 +95,6 @@ def sample_mode(args):
             # Regular mode: use standard sampling
             sampler = Sampler(bam_path=args.in_bam, bed_file=args.bed)
             sampler.run_sampling(
-                hlala_mode=False,
                 main_seed=args.seed,
                 out_bam=args.out_bam,
             )
