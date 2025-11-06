@@ -1,6 +1,9 @@
 import pysam
+import logging
 
 from samsampleX.Loader import Loader
+
+logger = logging.getLogger(__name__)
 
 
 class Bucket:
@@ -11,7 +14,7 @@ class Bucket:
     def __init__(self, out_bam: Loader):
         self.reads: list[pysam.AlignedSegment] = []
         self.out_bam: Loader = out_bam
-        self.max_reads: int = 1000
+        self.MAX_READS: int = 1000
 
     def __len__(self) -> int:
         """
@@ -28,13 +31,14 @@ class Bucket:
         elif isinstance(read, list):
             self.reads.extend(read)
 
-        if len(self.reads) > self.max_reads:
+        if len(self.reads) > self.MAX_READS:
             self.write_reads()
 
     def write_reads(self) -> None:
         """
-        Batch write reads when max_reads is reached
+        Batch write reads when max read count is reached
         """
+        logger.info(f"[BUCKET] - Write {len(self.reads)} reads to output BAM")
         if len(self.reads) > 0:
             for r in self.reads:
                 self.out_bam.bam.write(read=r)
