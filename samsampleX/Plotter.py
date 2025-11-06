@@ -36,7 +36,7 @@ class Plotter(FileHandler):
         """
         logger.info("Plotter - Initialize")
 
-        self.intervals = Intervals(bed_file=bed)
+        self.intervals = Intervals(bed_path=bed)
         self.boundaries = set(
             list(self.intervals.bed["start"]) + list(self.intervals.bed["end"])
         )

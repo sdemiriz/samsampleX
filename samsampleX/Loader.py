@@ -1,4 +1,6 @@
+import os
 import logging
+import tempfile
 from typing import Optional, Generator
 
 import pysam
@@ -25,9 +27,9 @@ class Loader(FileHandler):
         self.SEQUENCES = "HLA-LA/graphs/PRG_MHC_GRCh38_withIMGT/sequences.txt"
 
         # Set up paths for BAM file initialization
-        self.bam_path = bam_path
-        self.template = template
-        self.bam = self.load_bam(
+        self.bam_path: str = bam_path
+        self.template: Optional[pysam.AlignmentFile] = template
+        self.bam: pysam.AlignmentFile = self.load_bam(
             bam_path=self.bam_path, template=self.template, header=header
         )
 
@@ -132,17 +134,15 @@ class Loader(FileHandler):
             buckets[selected_bucket_index].append(read)
 
     def fetch(
-        self, names: Optional[list[str]] = None
+        self, contig: str, start: int, end: int
     ) -> Generator[pysam.AlignedSegment, None, None]:
         """
-        Yield all mapped reads within limits of BED file
+        Yield all reads within interval
         """
         logger.info("Loader - Fetch mapped reads from supplied region")
-        if names is not None:
-            for read in self.bam.fetch():
-                yield read
-        else:
-            yield from self.bam.fetch()
+        for r in self.bam.fetch(contig=contig, start=start, end=end):
+            if r.is_mapped:
+                yield r
 
     def get_reference_name(self, reference_id: int) -> str:
         """
@@ -156,3 +156,14 @@ class Loader(FileHandler):
         """
         logger.info(f"Loader - Close BAM file")
         self.bam.close()
+
+    def sort_and_index(self) -> None:
+        """
+        Sort and index file
+        """
+        logger.info(f"[LOADER] - Sort and index output BAM file")
+
+        with tempfile.NamedTemporaryFile(dir=".", delete=False) as temp_file:
+            pysam.sort(self.bam_path, "-o", temp_file.name)
+            os.rename(src=temp_file.name, dst=self.bam_path)
+        pysam.index(self.bam_path)

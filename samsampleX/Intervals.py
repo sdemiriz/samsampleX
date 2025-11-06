@@ -9,14 +9,14 @@ from samsampleX.FileHandler import FileHandler
 
 class Intervals(FileHandler):
 
-    def __init__(self, bed_file: str) -> None:
+    def __init__(self, bed_path: str) -> None:
         """
         Class constructor: read, validate BED and populate IntervalTree
         """
         info(f"Intervals - Initialize Intervals")
 
         # Read BED file
-        self.bed_path = self.get_bed_path(bed_file=bed_file)
+        self.bed_path = self.get_bed_path(bed_path=bed_path)
         self.bed = self.get_bed(bed_path=self.bed_path)
 
         # Get contig, start, and end from BED
@@ -33,18 +33,18 @@ class Intervals(FileHandler):
 
         info(f"Intervals - Complete initialize Intervals")
 
-    def get_bed_path(self, bed_file: str) -> str:
+    def get_bed_path(self, bed_path: str) -> str:
         """
         Read and validate the provided BED file path
         """
         info("Intervals - Handle BED file")
 
-        if not bed_file:
+        if not bed_path:
             raise ValueError("No BED file provided")
 
-        super().check_file_exists(path=bed_file)
-        info(f"Intervals - Received BED file path {bed_file}")
-        return bed_file
+        super().check_file_exists(path=bed_path)
+        info(f"Intervals - Received BED file path {bed_path}")
+        return bed_path
 
     def __len__(self) -> int:
         return len(self.tree)

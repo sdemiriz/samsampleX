@@ -49,7 +49,7 @@ def mapper_mode(args):
     try:
         start_time = time.time()
 
-        # Validate that if bed_files is provided, it matches the number of BAM files
+        # Validate that if bed_paths is provided, it matches the number of BAM files
         if args.bed and len(args.bed) != len(args.in_bam):
             raise ValueError(
                 f"Number of BED files ({len(args.bed)}) must match number of BAM files ({len(args.in_bam)})"
@@ -85,7 +85,7 @@ def sample_mode(args):
 
         # Determine if we're in HLA-LA mode based on --prg flag
         if args.prg:
-            sampler = hlaSampler(bam_path=args.in_bam, bed_file=args.bed)
+            sampler = hlaSampler(bam_path=args.in_bam, bed_path=args.bed)
             sampler.run_sampling(
                 main_seed=args.seed,
                 out_bam=args.out_bam,
@@ -93,11 +93,13 @@ def sample_mode(args):
             )
         else:
             # Regular mode: use standard sampling
-            sampler = Sampler(bam_path=args.in_bam, bed_file=args.bed)
-            sampler.run_sampling(
-                main_seed=args.seed,
-                out_bam=args.out_bam,
+            sampler = Sampler(
+                in_bam_path=args.in_bam,
+                bed_path=args.bed,
+                seed=args.seed,
+                out_bam_path=args.out_bam,
             )
+            sampler.run_sampling()
 
         logger.info("End log\n")
 
