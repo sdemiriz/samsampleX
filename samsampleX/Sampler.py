@@ -9,6 +9,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from samsampleX.Loader import Loader
+from samsampleX.Bucket import Bucket
 from samsampleX.Intervals import Intervals
 from samsampleX.FileHandler import FileHandler
 
@@ -44,7 +45,7 @@ class Sampler(FileHandler):
         logger.info(f"[SAMPLER] - Begin sampling")
 
         self.seeds: np.ndarray = self.get_interval_seeds()
-        self.buckets: list[list[pysam.AlignedSegment]] = self.get_empty_buckets()
+        self.buckets: list[Bucket] = self.get_empty_buckets()
 
         self.template_starts: np.ndarray = self.template.interval_starts
         self.template_ends: np.ndarray = self.template.interval_ends
@@ -71,13 +72,17 @@ class Sampler(FileHandler):
             read_count = len(mapped_reads)
             if read_count > 0:
                 np.random.seed(self.seeds[i])
-                self.buckets[i] = np.random.choice(
+                chosen_reads = np.random.choice(
                     a=np.arange(len(mapped_reads)),
                     size=interval.data,
                     replace=False,
                 )
-            else:
-                self.buckets[i] = []
+
+                reads = [mapped_reads[j] for j in chosen_reads]
+                self.buckets[i].add_read(reads)
+                seen_reads.update(
+                    [(r.query_name, r.reference_start, r.reference_end) for r in reads]
+                )
 
             logger.info(f"[SAMPLER] - Interval {i}: {len(mapped_reads)} reads found")
             logger.info(f"[SAMPLER] - Interval {i}: {interval.data} reads requested")
@@ -86,10 +91,7 @@ class Sampler(FileHandler):
             )
 
             seen_reads.clear()
-            for j, r in enumerate(mapped_reads):
-                if j in self.buckets[i]:
-                    seen_reads.add((r.query_name, r.reference_start, r.reference_end))
-                    self.result.bam.write(read=r)
+            self.buckets[i].write_reads()
 
         # Clean up file I/O
         self.target.close()
@@ -104,12 +106,12 @@ class Sampler(FileHandler):
         np.random.seed(self.main_seed)
         return np.random.randint(low=0, high=100_000_000, size=self.interval_count)
 
-    def get_empty_buckets(self) -> list[list[pysam.AlignedSegment]]:
+    def get_empty_buckets(self) -> list[Bucket]:
         """
         Generate an empty bucket per interval
         """
         logger.info("[SAMPLER] - Set up an empty bucket per interval")
-        return [[] for i in range(self.interval_count)]
+        return [Bucket(out_bam=self.result) for _ in range(self.interval_count)]
 
     def normalize_contig(self, contig: str) -> str:
         """
