@@ -149,16 +149,7 @@ class Plotter(FileHandler):
             pileup = pd.DataFrame(
                 [(a.reference_pos, a.nsegments) for a in p], columns=["coord", "depth"]
             )
-            ax.plot(pileup["coord"], pileup["depth"], label=l, color=c, zorder=10)
-
-    def add_boundaries(self, ax) -> None:
-        """Add vertical lines signifying interval boundaries to supplied axis"""
-        logger.info("Plotter - Draw boundaries")
-
-        for b in self.boundaries:
-            ax.axvline(
-                x=b, linestyle="--", linewidth=1.5, color="gray", alpha=0.5, zorder=10
-            )
+            ax.plot(pileup["coord"], pileup["depth"], label=l, color=c)
 
     def add_annotations(self, ax_line, ax_bar) -> None:
         """Add various text labels to supplied axes"""
@@ -203,7 +194,6 @@ class Plotter(FileHandler):
             fontsize=10,
             va="bottom",
             ha="left",
-            zorder=10,
         )
 
     @staticmethod
@@ -229,7 +219,6 @@ class Plotter(FileHandler):
         ha = "center"
         color = "black"
         size = "x-small"
-        zorder = 10
 
         for row in self.intervals.bed.iterrows():
 
@@ -244,7 +233,6 @@ class Plotter(FileHandler):
                     ha=ha,
                     color=color,
                     size=size,
-                    zorder=zorder,
                 )
             except ZeroDivisionError:
                 logger.info(f"Plotter - An interval contains zero reads")
@@ -255,7 +243,6 @@ class Plotter(FileHandler):
                     ha=ha,
                     color=color,
                     size=size,
-                    zorder=zorder,
                 )
 
     def add_barplot(self, ax):
@@ -287,7 +274,6 @@ class Plotter(FileHandler):
                     height=counts[i],
                     width=width / bam_count,
                     color=c,
-                    zorder=0,
                     label=label,
                 )
 
@@ -299,6 +285,8 @@ class Plotter(FileHandler):
 
     def add_horizontal_lines(self, ax) -> None:
         """Add horizontal lines to the plot"""
+        # Ensure grid lines are drawn behind all plot elements
+        ax.set_axisbelow(True)
         ax.grid(
             True,
             which="major",
@@ -307,7 +295,6 @@ class Plotter(FileHandler):
             alpha=0.5,
             linestyle="-",
             linewidth=1,
-            zorder=-10,
         )
 
     def add_minor_ticks(self, ax) -> None:
