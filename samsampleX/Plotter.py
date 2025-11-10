@@ -46,15 +46,15 @@ class Plotter(FileHandler):
         if in_bam:
             self.in_bam = Loader(bam_path=in_bam)
             self.bams["in"] = self.in_bam
-            self.colormap["in"] = "#648FFF"
+            self.colormap["in"] = "#66c2a5"
         if map_bam:
             self.map_bam = Loader(bam_path=map_bam)
             self.bams["map"] = self.map_bam
-            self.colormap["map"] = "#DC267F"
+            self.colormap["map"] = "#fc8d62"
         if out_bam:
             self.out_bam = Loader(bam_path=out_bam)
             self.bams["out"] = self.out_bam
-            self.colormap["out"] = "#FFB000"
+            self.colormap["out"] = "#8da0cb"
 
         self.out_plt = out_plt
         self.no_det = no_det
@@ -104,17 +104,21 @@ class Plotter(FileHandler):
         self.add_annotations(ax_line=ax_line, ax_bar=ax_bar)
 
         if not self.no_det:
-            self.add_boundaries(ax=ax_line)
+
             self.add_fractions(ax=ax_line)
-            self.add_boundaries(ax=ax_bar)
+            self.add_fractions(ax=ax_bar)
 
         logger.info("Plotter - Save plot")
-        plt.savefig(self.out_plt, dpi=600)
+        plt.savefig(self.out_plt, dpi=600, bbox_inches="tight")
 
     @staticmethod
     def setup_plot() -> tuple:
         """Set up the figure with two separate subplots side by side"""
         logger.info("Plotter - Setup plot")
+
+        plt.rcParams["font.family"] = "sans-serif"
+        plt.rcParams["font.sans-serif"] = ["Arial", "Helvetica", "DejaVu Sans"]
+
         fig, (ax_line, ax_bar) = plt.subplots(
             1, 2, figsize=(12, 5), layout="constrained"
         )
@@ -145,9 +149,7 @@ class Plotter(FileHandler):
             pileup = pd.DataFrame(
                 [(a.reference_pos, a.nsegments) for a in p], columns=["coord", "depth"]
             )
-            ax.plot(
-                pileup["coord"], pileup["depth"], label=l, alpha=0.8, color=c, zorder=1
-            )
+            ax.plot(pileup["coord"], pileup["depth"], label=l, color=c, zorder=10)
 
     def add_boundaries(self, ax) -> None:
         """Add vertical lines signifying interval boundaries to supplied axis"""
@@ -155,7 +157,7 @@ class Plotter(FileHandler):
 
         for b in self.boundaries:
             ax.axvline(
-                x=b, linestyle="--", linewidth=1.5, color="gray", alpha=0.5, zorder=1
+                x=b, linestyle="--", linewidth=1.5, color="gray", alpha=0.5, zorder=10
             )
 
     def add_annotations(self, ax_line, ax_bar) -> None:
@@ -163,34 +165,71 @@ class Plotter(FileHandler):
         logger.info("Plotter - Add axes, title, legend")
 
         # Annotations for line plot (left subplot)
-        ax_line.set_title("Depth of coverage in region")
-        ax_line.set_xlabel("Chromosomal coordinate")
-        ax_line.set_ylabel("Depth of coverage")
-        ax_line.margins(y=0.1)
+        self.remove_spines(ax=ax_line)
+        self.add_horizontal_lines(ax=ax_line)
+        self.add_minor_ticks(ax=ax_line)
+        ax_line.tick_params(axis="y", length=0)
+        ax_line.set_title("Depth of coverage")
 
         # Annotations for bar plot (right subplot)
-        ax_bar.set_title("Read count per interval")
-        ax_bar.set_xlabel("Chromosomal coordinate")
-        ax_bar.set_ylabel("Read count")
-        ax_bar.margins(y=0.1)
+        self.remove_spines(ax=ax_bar)
+        self.add_horizontal_lines(ax=ax_bar)
+        self.add_minor_ticks(ax=ax_bar)
+        ax_bar.tick_params(axis="y", length=0)
+        ax_bar.set_title("Per-interval read count")
 
-        ax_line.legend(loc="upper right")
+        # Get handles and labels from the bar plot for the legend
+        handles, labels = ax_bar.get_legend_handles_labels()
 
-        # Add super title to the figure
-        region_info = (
-            f"{self.intervals.contig}:{self.intervals.start}-{self.intervals.end}"
+        # Create figure-level legend at bottom center, horizontally arranged
+        fig = ax_bar.figure
+        fig.legend(
+            handles,
+            labels,
+            loc="lower center",
+            ncol=len(handles),
+            frameon=False,
         )
-        ax_line.figure.suptitle(f"{region_info}", fontsize=14)
+
+        # Align y=0 lines between both plots
+        self.align_zero_lines(ax_line, ax_bar)
+
+        # Add region coordinates text at bottom left of figure
+        region_info = f"Region {self.intervals.contig}:{self.intervals.start:,}-{self.intervals.end:,}"
+        fig.text(
+            0,
+            -0.05,
+            region_info,
+            fontsize=10,
+            va="bottom",
+            ha="left",
+            zorder=10,
+        )
+
+    @staticmethod
+    def align_zero_lines(ax_line, ax_bar) -> None:
+        """Align y=0 lines between both plots to the same vertical position, preserving line plot max"""
+        # Get current y-limits from both plots
+        y_min_line, y_max_line = ax_line.get_ylim()
+        y_min_bar, y_max_bar = ax_bar.get_ylim()
+
+        # Calculate ranges below zero for line plot
+        below_0_ratio = -y_min_line / (y_max_line - y_min_line)
+
+        # Set bar plot to match the same range below the zero line as the line plot
+        ax_bar.set_ylim(-below_0_ratio * (y_max_bar - y_min_bar), y_max_bar)
 
     def add_fractions(self, ax):
         """Add fractions to represent distribution values to supplied axis"""
         logger.info("Plotter - Add fraction annotations")
 
-        y = ax.get_ylim()[1] * 0.97
+        # Position at bottom of plot, slightly above the bottom line
+        y_min, y_max = ax.get_ylim()
+        y = y_min + (y_max - y_min) * 0.01
         ha = "center"
         color = "black"
         size = "x-small"
-        zorder = 2
+        zorder = 10
 
         for row in self.intervals.bed.iterrows():
 
@@ -223,7 +262,7 @@ class Plotter(FileHandler):
         """Add barplot signifying number of reads in each interval"""
         logger.info("Plotter - Add barplot")
 
-        for row in self.intervals.bed.iterrows():
+        for row_idx, row in enumerate(self.intervals.bed.iterrows()):
             start, end = row[1]["start"], row[1]["end"]
             width = end - start
             counts = self.get_counts(start=start, end=end)
@@ -238,12 +277,39 @@ class Plotter(FileHandler):
             else:
                 raise ValueError(f"Invalid number of BAMs: {bam_count}")
 
-            for i, c in zip(range(bam_count), self.colormap.values()):
+            for i, (bam_key, c) in enumerate(
+                zip(self.bams.keys(), self.colormap.values())
+            ):
+                # Add label only for the first interval to avoid duplicate legend entries
+                label = bam_key if row_idx == 0 else None
                 ax.bar(
                     x=(start + end) / 2 - (offset - i) * width / bam_count,
                     height=counts[i],
                     width=width / bam_count,
                     color=c,
-                    alpha=0.5,
                     zorder=0,
+                    label=label,
                 )
+
+    def remove_spines(self, ax) -> None:
+        """Remove top, right, and left spines, keep only bottom"""
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["left"].set_visible(False)
+
+    def add_horizontal_lines(self, ax) -> None:
+        """Add horizontal lines to the plot"""
+        ax.grid(
+            True,
+            which="major",
+            axis="y",
+            color="gray",
+            alpha=0.5,
+            linestyle="-",
+            linewidth=1,
+            zorder=-10,
+        )
+
+    def add_minor_ticks(self, ax) -> None:
+        ax.set_xticks(list(self.boundaries), minor=True)
+        ax.tick_params(axis="x", which="minor", length=5, direction="in")
