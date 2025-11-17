@@ -36,8 +36,7 @@ class Sampler(FileHandler):
         self.interval_count: int = len(self.template)
         self.main_seed: int = seed
 
-        logger.info(f"[SAMPLER] - Set up outputs")
-        self.write_out: str = out_bam_path
+        logger.info(f"[SAMPLER] - Set up output")
         self.result: Loader = Loader(bam_path=out_bam_path, template=self.target.bam)
 
     def run_sampling(self) -> None:
@@ -47,10 +46,9 @@ class Sampler(FileHandler):
         self.seeds: np.ndarray = self.get_interval_seeds()
         self.buckets: list[Bucket] = self.get_empty_buckets()
 
-        self.template_starts: np.ndarray = self.template.interval_starts
-        self.template_ends: np.ndarray = self.template.interval_ends
+        template_starts: np.ndarray = self.template.interval_starts
+        template_ends: np.ndarray = self.template.interval_ends
 
-        seen_reads: set[tuple[str, int, int]] = set()
         for i, interval in tqdm(
             enumerate(self.template.tree),
             total=len(self.template),
@@ -58,39 +56,63 @@ class Sampler(FileHandler):
             unit=" intervals",
         ):
 
-            # Get reads without duplicates
-            mapped_reads = [
-                r
+            # Pass 1: Count reads in interval (with conditions)
+            read_count = sum(
+                1
                 for r in self.target.fetch(
                     contig=self.contig,
-                    start=self.template_starts[i],
-                    end=self.template_ends[i],
+                    start=template_starts[i],
+                    end=template_ends[i],
                 )
-                if (r.query_name, r.reference_start, r.reference_end) not in seen_reads
+                if not self.overlap(
+                    read_coords=(r.reference_start, r.reference_end),
+                    int_coords=(template_starts[0], template_starts[i]),
+                )
+            )
+
+            # Sample reads based on read count
+            chosen_reads = []
+            if read_count > 0 and interval.data > 0:
+                np.random.seed(self.seeds[i])
+                try:
+                    chosen_reads = np.random.choice(
+                        a=np.arange(read_count),
+                        size=interval.data,
+                        replace=False,
+                    )
+                except ValueError:
+                    logger.error(
+                        f"[SAMPLER] - Interval {i}: {interval.data} reads requested, but only {read_count} reads found"
+                    )
+                    chosen_reads = []
+
+            # Pass 2: Collect reads based on chosen indices
+            reads = [
+                r
+                for idx, r in enumerate(
+                    r
+                    for r in self.target.fetch(
+                        contig=self.contig,
+                        start=template_starts[i],
+                        end=template_ends[i],
+                    )
+                    if not self.overlap(
+                        read_coords=(r.reference_start, r.reference_end),
+                        int_coords=(template_starts[0], template_starts[i]),
+                    )
+                )
+                if idx in chosen_reads
             ]
 
-            read_count = len(mapped_reads)
-            if read_count > 0:
-                np.random.seed(self.seeds[i])
-                chosen_reads = np.random.choice(
-                    a=np.arange(len(mapped_reads)),
-                    size=interval.data,
-                    replace=False,
-                )
+            # Write reads
+            self.buckets[i].add_read(reads)
 
-                reads = [mapped_reads[j] for j in chosen_reads]
-                self.buckets[i].add_read(reads)
-                seen_reads.update(
-                    [(r.query_name, r.reference_start, r.reference_end) for r in reads]
-                )
-
-            logger.info(f"[SAMPLER] - Interval {i}: {len(mapped_reads)} reads found")
+            logger.info(f"[SAMPLER] - Interval {i}: {read_count} reads found")
             logger.info(f"[SAMPLER] - Interval {i}: {interval.data} reads requested")
             logger.info(
                 f"[SAMPLER] - Interval {i}: {len(self.buckets[i])} reads sampled"
             )
 
-            seen_reads.clear()
             self.buckets[i].write_reads()
 
         # Clean up file I/O
