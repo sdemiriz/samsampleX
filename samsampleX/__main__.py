@@ -7,7 +7,6 @@ import argparse
 from datetime import datetime as dt
 from logging import INFO, basicConfig, getLogger
 
-from samsampleX.Loader import Loader
 from samsampleX.Mapper import Mapper
 from samsampleX.Plotter import Plotter
 from samsampleX.Sampler import Sampler
@@ -145,7 +144,6 @@ def plotter_mode(args):
             out_bam=args.out_bam,
             bed=args.bed,
             out_plt=args.out_plt,
-            no_det=args.no_det,
         )
 
         plotter.plot()
@@ -266,11 +264,6 @@ def main():
     plotter.add_argument("--bed", default=None, help="Specific BED file to plot.")
     plotter.add_argument(
         "--out-plt", default="out.png", help="Path for the output plot."
-    )
-    plotter.add_argument(
-        "--no-det",
-        action="store_true",
-        help="Set det parameter to False for the Plotter class.",
     )
     plotter.set_defaults(func=plotter_mode)
 
