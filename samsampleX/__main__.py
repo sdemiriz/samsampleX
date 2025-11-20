@@ -60,7 +60,6 @@ def mapper_mode(args):
             start=args.start,
             end=args.end,
             interval_length=args.interval_length,
-            interval_count=args.interval_count,
             bed_dir=args.bed_dir,
             bed=args.bed,
         )
@@ -204,12 +203,10 @@ def main():
         nargs="+",
         help="BED file names (must match number of input BAM files).",
     )
-    intervals = mapper.add_mutually_exclusive_group(required=True)
-    intervals.add_argument(
-        "--interval-length", default=None, help="Length of intervals to generate."
-    )
-    intervals.add_argument(
-        "--interval-count", default=None, help="Number of intervals to generate."
+    mapper.add_argument(
+        "--interval-length",
+        required=True,
+        help="Length of intervals to generate.",
     )
     mapper.set_defaults(func=mapper_mode)
 
