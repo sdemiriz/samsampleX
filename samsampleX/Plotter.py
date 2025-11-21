@@ -87,7 +87,17 @@ class Plotter(FileHandler):
         # Add content to bar and line plot
         self.add_depth_plot(ax=ax_depth)
         self.add_read_count_plot(ax=ax_count)
-        self.add_annotations(ax_depth=ax_depth, ax_count=ax_count)
+
+        # Calculate and report error metrics
+        depth_error, count_error = self.calculate_and_report_error()
+
+        # Add annotations with error values in titles
+        self.add_annotations(
+            ax_depth=ax_depth,
+            ax_count=ax_count,
+            depth_error=depth_error,
+            count_error=count_error,
+        )
 
         logger.info("[PLOTTER] - Save plot")
         plt.savefig(self.out_plt, dpi=600, bbox_inches="tight")
@@ -130,7 +140,13 @@ class Plotter(FileHandler):
             ax.plot(pileup["coord"], pileup["depth"], label=l, color=c, linewidth=1)
             ax.fill_between(pileup["coord"], pileup["depth"], alpha=0.3, color=c)
 
-    def add_annotations(self, ax_depth, ax_count) -> None:
+    def add_annotations(
+        self,
+        ax_depth,
+        ax_count,
+        depth_error: Optional[float] = None,
+        count_error: Optional[float] = None,
+    ) -> None:
         """Add various text labels to supplied axes"""
         logger.info("[PLOTTER] - Add axes, title, legend")
 
@@ -138,13 +154,19 @@ class Plotter(FileHandler):
         self.remove_spines(ax=ax_depth)
         self.add_horizontal_lines(ax=ax_depth)
         ax_depth.tick_params(axis="y", length=0)
-        ax_depth.set_title("Depth of coverage")
+        depth_title = "Depth of coverage"
+        if depth_error is not None:
+            depth_title += f" (avg. norm. diff. {depth_error:.3f})"
+        ax_depth.set_title(depth_title)
 
         # Annotations for count plot (right subplot)
         self.remove_spines(ax=ax_count)
         self.add_horizontal_lines(ax=ax_count)
         ax_count.tick_params(axis="y", length=0)
-        ax_count.set_title("Read count")
+        count_title = "Read count"
+        if count_error is not None:
+            count_title += f" (avg. norm. diff. {count_error:.3f})"
+        ax_count.set_title(count_title)
 
         # Set consistent x-axis ticks for both plots
         num_ticks = 5
@@ -245,3 +267,166 @@ class Plotter(FileHandler):
             linestyle="-",
             linewidth=1,
         )
+
+    def calculate_normalized_difference(self, map_val: float, out_val: float) -> float:
+        """
+        Calculate normalized difference: (map - out) / (map + out)
+
+        This metric ranges from -1 to 1, where:
+        - 0 means perfect agreement
+        - Positive values mean map > out
+        - Negative values mean map < out
+
+        Returns 0.0 if both values are 0 (to avoid division by zero).
+        """
+        denominator = map_val + out_val
+        if denominator == 0:
+            return 0.0
+        return (map_val - out_val) / denominator
+
+    def calculate_depth_error(self) -> float:
+        """
+        Calculate average normalized difference for depth of coverage.
+        Compares map and out BAM files at each position.
+
+        Uses signed differences, allowing positive and negative differences
+        to cancel out, which better represents systematic bias vs balanced differences.
+
+        Returns:
+            Average normalized difference across all positions (signed, ranges from -1 to 1)
+        """
+        if "map" not in self.bams or "out" not in self.bams:
+            logger.warning(
+                "[PLOTTER] - Cannot calculate depth error: map and/or out BAM not provided"
+            )
+            return None
+
+        logger.info("[PLOTTER] - Calculate depth error")
+
+        # Get pileups for map and out BAMs
+        map_pileup = self.map_bam.bam.pileup(
+            contig=self.map_bam.normalize_contig(contig=self.intervals.contig),
+            start=self.intervals.start,
+            end=self.intervals.end,
+        )
+        out_pileup = self.out_bam.bam.pileup(
+            contig=self.out_bam.normalize_contig(contig=self.intervals.contig),
+            start=self.intervals.start,
+            end=self.intervals.end,
+        )
+
+        # Convert to DataFrames for easier comparison
+        map_df = pd.DataFrame(
+            [(a.reference_pos, a.nsegments) for a in map_pileup],
+            columns=["coord", "depth"],
+        )
+        out_df = pd.DataFrame(
+            [(a.reference_pos, a.nsegments) for a in out_pileup],
+            columns=["coord", "depth"],
+        )
+
+        # Merge on coordinate to align positions
+        merged = pd.merge(
+            map_df, out_df, on="coord", how="outer", suffixes=("_map", "_out")
+        )
+        # Fill NaN with 0 for positions present in only one BAM
+        merged = merged.fillna(0)
+
+        # Calculate normalized difference for each position
+        merged["normalized_diff"] = merged.apply(
+            lambda row: self.calculate_normalized_difference(
+                row["depth_map"], row["depth_out"]
+            ),
+            axis=1,
+        )
+
+        # Return signed average (allows positive and negative differences to cancel out)
+        avg_error = merged["normalized_diff"].mean()
+
+        logger.info(
+            f"[PLOTTER] - Depth error (avg normalized diff, signed): {avg_error:.6f}"
+        )
+        return avg_error
+
+    def calculate_read_count_error(self) -> float:
+        """
+        Calculate average normalized difference for read counts per interval.
+        Compares map and out BAM files for each interval in the BED file.
+
+        Uses signed differences, allowing positive and negative differences
+        to cancel out, which better represents systematic bias vs balanced differences.
+
+        Returns:
+            Average normalized difference across all intervals (signed, ranges from -1 to 1)
+        """
+        if "map" not in self.bams or "out" not in self.bams:
+            logger.warning(
+                "[PLOTTER] - Cannot calculate read count error: map and/or out BAM not provided"
+            )
+            return None
+
+        logger.info("[PLOTTER] - Calculate read count error")
+
+        # Get counts for each interval
+        df = self.intervals.bed.copy()
+        df["counts_map"] = df.apply(
+            lambda row: self.get_counts(
+                bam=self.map_bam, start=row["start"], end=row["end"]
+            )[0],
+            axis=1,
+        )
+        df["counts_out"] = df.apply(
+            lambda row: self.get_counts(
+                bam=self.out_bam, start=row["start"], end=row["end"]
+            )[0],
+            axis=1,
+        )
+
+        # Calculate normalized difference for each interval
+        df["normalized_diff"] = df.apply(
+            lambda row: self.calculate_normalized_difference(
+                row["counts_map"], row["counts_out"]
+            ),
+            axis=1,
+        )
+
+        # Return signed average (allows positive and negative differences to cancel out)
+        avg_error = df["normalized_diff"].mean()
+
+        logger.info(
+            f"[PLOTTER] - Read count error (avg normalized diff, signed): {avg_error:.6f}"
+        )
+        return avg_error
+
+    def calculate_and_report_error(self) -> tuple[Optional[float], Optional[float]]:
+        """
+        Calculate error metrics for both depth and read counts,
+        then report the overall average error.
+
+        Uses signed differences, allowing positive and negative differences
+        to cancel out, which better represents systematic bias vs balanced differences.
+
+        Returns:
+            Tuple of (depth_error, count_error). Either may be None if BAMs are missing.
+            Values are signed (range -1 to 1), where:
+            - Positive values indicate map > out on average
+            - Negative values indicate map < out on average
+            - Values near 0 indicate balanced differences
+        """
+        depth_error = self.calculate_depth_error()
+        count_error = self.calculate_read_count_error()
+
+        if depth_error is None or count_error is None:
+            logger.warning(
+                "[PLOTTER] - Error calculation incomplete: map and/or out BAM not available"
+            )
+        else:
+            # Calculate overall average error (signed, allows cancellation)
+            overall_error = (depth_error + count_error) / 2.0
+
+            logger.info(
+                f"[PLOTTER] - Error metrics (signed) - Depth: {depth_error:.6f}, "
+                f"Read count: {count_error:.6f}, Overall: {overall_error:.6f}"
+            )
+
+        return depth_error, count_error
