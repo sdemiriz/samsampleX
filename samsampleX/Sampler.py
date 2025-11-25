@@ -75,6 +75,10 @@ class Sampler(FileHandler):
             self.buckets = sorted(self.buckets, key=lambda x: x["target"])
             self.buckets = [b for b in self.buckets if len(b["reads"]) > 0]
 
+            # Break if no buckets remain after filtering
+            if len(self.buckets) == 0:
+                break
+
             # Check if the first bucket has any reads and target > 0
             if len(self.buckets[0]["reads"]) == 0 or self.buckets[0]["target"] <= 0:
 
