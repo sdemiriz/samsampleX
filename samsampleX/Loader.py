@@ -140,7 +140,9 @@ class Loader(FileHandler):
         Yield all reads within interval
         """
         logger.info("Loader - Fetch mapped reads from supplied region")
-        for r in self.bam.fetch(contig=contig, start=start, end=end):
+        for r in self.bam.fetch(
+            contig=contig, start=start, end=end, multiple_iterators=True
+        ):
             if r.is_mapped:
                 yield r
 

@@ -1,10 +1,9 @@
 import logging
 
 import numpy as np
+from tqdm import tqdm
 
 from samsampleX.Loader import Loader
-from samsampleX.Bucket import Bucket
-from samsampleX.Intervals import Intervals
 from samsampleX.FileHandler import FileHandler
 
 logger = logging.getLogger(__name__)
@@ -12,146 +11,159 @@ logger = logging.getLogger(__name__)
 
 class Sampler(FileHandler):
     """
-    Sample reads from Loader and Intervals instances
+    Sample reads from a target BAM so that its depth matches a template BAM.
     """
 
     def __init__(
-        self, in_bam_path: str, bed_path: str, seed: int, out_bam_path: str
+        self,
+        source_path: str,
+        template_path: str,
+        region: str,
+        seed: int,
+        out_bam_path: str,
     ) -> None:
         """
-        Initialize components necessary for sampling
+        Initialize loaders and metadata needed for sampling.
         """
         logger.info("Sampler - Initialize Sampler")
 
-        logger.info(f"[SAMPLER] - Set up inputs")
-        self.target: Loader = Loader(bam_path=in_bam_path, template=None)
-        self.template: Intervals = Intervals(bed_path=bed_path)
-        self.contig: str = self.normalize_contig(contig=self.template.contig)
-        self.interval_count: int = len(self.template)
-        self.main_seed: int = seed
-        self.seeds: np.ndarray = self.get_interval_seeds()
+        logger.info("[SAMPLER] - Set up inputs")
+        self.target: Loader = Loader(bam_path=source_path, template=None)
+        self.template: Loader = Loader(bam_path=template_path, template=None)
 
-        logger.info(f"[SAMPLER] - Set up output")
+        region_contig, region_start, region_end = self._parse_region(region)
+        self.contig: str = self.normalize_contig(contig=region_contig)
+
+        if self.contig not in self.template.bam.references:
+            raise ValueError(
+                f"Contig {self.contig} not found in template BAM header "
+                f"{self.template.bam_path}"
+            )
+
+        self.region_start: int = region_start
+        self.region_end: int = region_end
+        if self.region_start >= self.region_end:
+            raise ValueError("Region start must be less than end coordinate")
+
+        self.main_seed: int = seed
+
+        logger.info("[SAMPLER] - Set up output")
         self.result: Loader = Loader(bam_path=out_bam_path, template=self.target.bam)
 
     def run_sampling(self) -> None:
-        """Iterate through intervals and sample reads"""
-        logger.info(f"[SAMPLER] - Begin sampling")
+        logger.info("[SAMPLER] - Begin read sampling")
 
-        self.buckets = sorted(
-            [
-                {
-                    "reads": [],
-                    "target": t.data,
-                    "start": t.begin,
-                    "end": t.end,
-                    "interval_idx": i,
-                }
-                for i, t in enumerate(self.template.tree)
-                if t.data > 0
-            ],
-            key=lambda x: x["target"],
+        rng = np.random.default_rng(self.main_seed)
+        weight_iter = self._weight_stream(
+            chrom=self.contig, start=self.region_start, end=self.region_end
         )
+        weight_buffer = _WeightBuffer(start=self.region_start, weight_iter=weight_iter)
 
-        # Pass 1: Sort read indices into buckets
-        for i, r in enumerate(
-            self.target.fetch(
-                contig=self.contig, start=self.template.start, end=self.template.end
-            )
+        processed_reads = 0
+        kept_reads = 0
+
+        total_reads = self.target.bam.count(
+            contig=self.contig, start=self.region_start, end=self.region_end
+        )
+        read_iter = self.target.fetch(
+            contig=self.contig, start=self.region_start, end=self.region_end
+        )
+        for read in tqdm(
+            read_iter,
+            total=total_reads if total_reads >= 0 else None,
+            desc="Sampling reads",
+            unit=" reads",
         ):
-            for bucket in self.buckets:
-                if self.overlap(
-                    read_coords=(r.reference_start, r.reference_end),
-                    int_coords=(bucket["start"], bucket["end"]),
-                ):
-                    bucket["reads"].append(i)
+            # if read.is_unmapped or read.is_secondary or read.is_supplementary:
+            #     continue
 
-        self.selected_reads = []
-        logger.info(f"[SAMPLER] - Pass 1 completed")
-
-        # Process buckets in ascending order of target value
-        while len(self.buckets) > 0:
-            # Sort buckets, smallest to largest target value
-            self.buckets = sorted(self.buckets, key=lambda x: x["target"])
-            self.buckets = [b for b in self.buckets if len(b["reads"]) > 0]
-
-            # Break if no buckets remain after filtering
-            if len(self.buckets) == 0:
-                break
-
-            # Check if the first bucket has any reads and target > 0
-            if len(self.buckets[0]["reads"]) == 0 or self.buckets[0]["target"] <= 0:
-
-                # Remove leftover reads because they should not be sampled again
-                for b in self.buckets:
-                    b["reads"] = [
-                        r for r in b["reads"] if r not in self.buckets.pop(0)["reads"]
-                    ]
+            if read.reference_end is None:
                 continue
 
-            # Sample a read from the smallest target bucket
-            np.random.seed(self.seeds[self.buckets[0]["interval_idx"]])
-            sampled_read_idx = int(
-                np.random.choice(a=self.buckets[0]["reads"], size=1, replace=False)[0]
-            )
+            overlap_start = max(read.reference_start, self.region_start)
+            overlap_end = min(read.reference_end, self.region_end)
 
-            # Find all buckets with this read index
-            containing_buckets = [
-                b for b in self.buckets if sampled_read_idx in b["reads"]
-            ]
+            if overlap_end <= overlap_start:
+                continue
 
-            # Drop sampled index from all buckets and decrement targets
-            buckets_to_remove = []
-            for b in containing_buckets:
-                b["reads"].remove(sampled_read_idx)
-                b["target"] = b["target"] - 1
-                # Mark buckets that should be removed (empty or target reached zero)
-                if len(b["reads"]) == 0 or b["target"] <= 0:
-                    buckets_to_remove.append(b)
+            avg_weight = weight_buffer.mean(overlap_start, overlap_end)
+            avg_weight = max(0.0, min(1.0, avg_weight))
 
-            # Remove exhausted buckets and clean up their reads from remaining buckets
-            for b_to_remove in buckets_to_remove:
-                leftover_reads = b_to_remove["reads"]
-                self.buckets.remove(b_to_remove)
-                # Remove leftover reads from all remaining buckets
-                for b in self.buckets:
-                    b["reads"] = [r for r in b["reads"] if r not in leftover_reads]
+            if rng.random() < avg_weight:
+                self.result.bam.write(read)
+                kept_reads += 1
 
-            # Record the sampled read
-            self.selected_reads.append(sampled_read_idx)
+            weight_buffer.discard_before(overlap_start)
+            processed_reads += 1
 
-        logger.info(f"[SAMPLER] - Finish sampling")
-
-        # Pass 2: Write reads with selected indices to output BAM
-        for i, r in enumerate(
-            self.target.fetch(
-                contig=self.contig, start=self.template.start, end=self.template.end
-            )
-        ):
-            if i in self.selected_reads:
-                self.result.bam.write(r)
-
-        logger.info(f"[SAMPLER] - Pass 2 completed")
-
-        # Clean up file I/O
+        logger.info(
+            "[SAMPLER] - Processed %d reads, retained %d", processed_reads, kept_reads
+        )
         self.target.close()
+        self.template.close()
         self.result.close()
         self.result.sort_and_index()
 
-    def get_interval_seeds(self) -> np.ndarray:
+    def _weight_stream(self, chrom: str, start: int, end: int):
         """
-        Use main seed value to generate independent random seeds per interval
+        Yield per-base weights computed from template and target piles.
         """
-        logger.info(f"[SAMPLER] - Generate random seeds")
-        np.random.seed(self.main_seed)
-        return np.random.randint(low=0, high=100_000_000, size=self.interval_count)
+        template_pile = self.template.bam.pileup(
+            chrom,
+            start,
+            end,
+            truncate=True,
+            stepper="all",
+            max_depth=0,
+            multiple_iterators=True,
+        )
+        target_pile = self.target.bam.pileup(
+            chrom,
+            start,
+            end,
+            truncate=True,
+            stepper="all",
+            max_depth=0,
+            multiple_iterators=True,
+        )
 
-    def get_empty_buckets(self) -> list[Bucket]:
+        template_iter = iter(template_pile)
+        target_iter = iter(target_pile)
+        template_col = next(template_iter, None)
+        target_col = next(target_iter, None)
+
+        pos = start
+        while pos < end:
+            template_depth, template_col = self._depth_at_position(
+                template_col, template_iter, pos
+            )
+            target_depth, target_col = self._depth_at_position(
+                target_col, target_iter, pos
+            )
+
+            if target_depth <= 0:
+                yield 0.0
+            else:
+                ratio = min(template_depth / target_depth, 1.0)
+                yield float(ratio)
+
+            pos += 1
+
+    @staticmethod
+    def _depth_at_position(current_col, iterator, pos: int):
         """
-        Generate an empty bucket per interval
+        Return depth for a specific genomic position from a pileup iterator.
         """
-        logger.info("[SAMPLER] - Set up an empty bucket per interval")
-        return [Bucket(out_bam=self.result) for _ in range(self.interval_count)]
+        while current_col is not None and current_col.reference_pos < pos:
+            current_col = next(iterator, None)
+
+        if current_col is not None and current_col.reference_pos == pos:
+            depth = current_col.nsegments
+            current_col = next(iterator, None)
+        else:
+            depth = 0
+
+        return depth, current_col
 
     def normalize_contig(self, contig: str) -> str:
         """
@@ -184,3 +196,85 @@ class Sampler(FileHandler):
         int_start, int_end = int_coords
 
         return max(read_start, int_start) < min(read_end, int_end)
+
+    @staticmethod
+    def _parse_region(region: str) -> tuple[str, int, int]:
+        """
+        Parse a region string formatted as contig:start-end.
+        """
+        if ":" not in region or "-" not in region:
+            raise ValueError(f"Region '{region}' must be formatted as contig:start-end")
+
+        contig_part, coords = region.split(":", 1)
+        start_str, end_str = coords.replace(",", "").split("-", 1)
+
+        try:
+            start = int(start_str)
+            end = int(end_str)
+        except ValueError as exc:
+            raise ValueError(f"Region coordinates must be integers: {region}") from exc
+
+        if start < 0 or end < 0:
+            raise ValueError("Region coordinates must be non-negative integers")
+
+        return contig_part, start, end
+
+
+class _WeightBuffer:
+    """
+    Maintain a sliding window of per-base weights produced by a generator.
+    """
+
+    def __init__(self, start: int, weight_iter):
+        self._iter = weight_iter
+        self._buffer_start = start
+        self._weights: list[float] = []
+        self._exhausted = False
+
+    def _extend_to(self, upto: int) -> None:
+        while self._buffer_start + len(self._weights) < upto:
+            if self._exhausted:
+                self._weights.append(0.0)
+                continue
+
+            try:
+                weight = next(self._iter)
+            except StopIteration:
+                self._exhausted = True
+                weight = 0.0
+
+            self._weights.append(weight)
+
+    def mean(self, start: int, end: int) -> float:
+        if end <= start:
+            return 0.0
+
+        self._extend_to(end)
+
+        rel_start = start - self._buffer_start
+        rel_end = end - self._buffer_start
+
+        if rel_start < 0:
+            rel_start = 0
+        rel_end = min(rel_end, len(self._weights))
+
+        if rel_end <= rel_start:
+            return 0.0
+
+        total = 0.0
+        for idx in range(rel_start, rel_end):
+            total += self._weights[idx]
+
+        length = rel_end - rel_start
+        return total / length if length else 0.0
+
+    def discard_before(self, pos: int) -> None:
+        if pos <= self._buffer_start:
+            return
+
+        drop = min(pos - self._buffer_start, len(self._weights))
+        if drop <= 0:
+            return
+
+        self._weights = self._weights[drop:]
+        self._buffer_start += drop

@@ -83,6 +83,8 @@ def sample_mode(args):
 
         # Determine if we're in HLA-LA mode based on --prg flag
         if args.prg:
+            if not args.bed:
+                raise ValueError("--bed is required when using --prg mode")
             sampler = hlaSampler(bam_path=args.in_bam, bed_path=args.bed)
             sampler.run_sampling(
                 main_seed=args.seed,
@@ -90,10 +92,13 @@ def sample_mode(args):
                 genome_build=args.prg,
             )
         else:
+            if not args.region:
+                raise ValueError("--region must be provided when --prg is not used")
             # Regular mode: use standard sampling
             sampler = Sampler(
-                in_bam_path=args.in_bam,
-                bed_path=args.bed,
+                source_path=args.in_bam,
+                template_path=args.template_bam,
+                region=args.region,
                 seed=args.seed,
                 out_bam_path=args.out_bam,
             )
@@ -217,9 +222,21 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     sample.add_argument(
-        "--in-bam", required=True, help="Target BAM file to downsample."
+        "--in-bam", required=True, help="Target/source BAM file to downsample."
     )
-    sample.add_argument("--bed", required=True, help="BED file to downsample from.")
+    sample.add_argument(
+        "--template-bam",
+        required=True,
+        help="Template BAM whose depth profile should be matched.",
+    )
+    sample.add_argument(
+        "--region",
+        help="Region to sample, formatted as contig:start-end (required when not using --prg).",
+    )
+    sample.add_argument(
+        "--bed",
+        help="BED file (required only when using --prg mode).",
+    )
     sample.add_argument(
         "--seed", default=42, type=int, help="Seed for random downsampling."
     )
