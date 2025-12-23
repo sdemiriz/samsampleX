@@ -126,7 +126,7 @@ def boxcar_sample_mode(args):
 
         sampler = BoxcarSampler(
             in_bam=args.in_bam,
-            chunk_starts=args.chunk_starts,
+            template=args.template,
             region=args.region,
             read_length=args.read_length,
             window_size=args.window_size,
@@ -241,7 +241,7 @@ def main():
         help="Target BAM file to sample from.",
     )
     boxcar_sample.add_argument(
-        "--chunk-starts",
+        "--template",
         required=True,
         help="Template file from boxcar-map.",
     )
@@ -278,6 +278,11 @@ def main():
         type=int,
         default=42,
         help="Optional RNG seed to make sampling decisions reproducible.",
+    )
+    boxcar_sample.add_argument(
+        "--no-index",
+        action="store_false",
+        help="Do not index the output BAM file.",
     )
     boxcar_sample.set_defaults(func=boxcar_sample_mode)
 
