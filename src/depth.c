@@ -15,27 +15,6 @@
 #include "samsampleX.h"
 
 /*
- * Pileup callback data structure
- */
-typedef struct {
-    depth_array_t *arr;
-    int64_t region_start;
-} pileup_data_t;
-
-/*
- * Pileup read filter callback - accept all mapped reads
- */
-static int pileup_read_filter(void *data, bam1_t *b) {
-    (void)data;  /* Unused */
-    
-    /* Skip unmapped reads, secondary alignments, and failed QC */
-    if (b->core.flag & (BAM_FUNMAP | BAM_FSECONDARY | BAM_FQCFAIL | BAM_FDUP)) {
-        return 0;
-    }
-    return 1;
-}
-
-/*
  * Compute depth of coverage for a region from a BAM file.
  */
 depth_array_t *depth_from_bam(const char *bam_path, const char *contig,

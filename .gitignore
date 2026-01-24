@@ -1,0 +1,14 @@
+# Build artifacts
+build/
+samsampleX
+
+# Test files
+*.bam
+*.bai
+*.bed
+
+# Editor files
+*.swp
+*~
+.vscode/
+

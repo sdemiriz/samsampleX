@@ -336,13 +336,13 @@ int sample_run(sample_args_t *args) {
         fprintf(stderr, "[sample] Sorting output BAM...\n");
         
         /* Create temp file for sorted output */
-        char tmp_path[4096];
+        char tmp_path[1024];
         snprintf(tmp_path, sizeof(tmp_path), "%s.tmp.bam", args->out_bam);
         
         /* Use samtools sort via htslib */
-        char sort_cmd[8192];
+        char sort_cmd[4096];
         snprintf(sort_cmd, sizeof(sort_cmd), 
-                 "samtools sort -o %s %s && mv %s %s && samtools index %s",
+                 "samtools sort -o '%s' '%s' && mv '%s' '%s' && samtools index '%s'",
                  tmp_path, args->out_bam, tmp_path, args->out_bam, args->out_bam);
         
         int sort_ret = system(sort_cmd);

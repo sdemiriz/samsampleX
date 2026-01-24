@@ -27,9 +27,9 @@ OBJS = $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 # Include paths
 INCLUDES = -I$(INC_DIR) -I$(SRC_DIR)
 
-# Check for htslib using pkg-config
+# Check for htslib using pkg-config (with --static for full dependencies)
 HTSLIB_CFLAGS := $(shell pkg-config --cflags htslib 2>/dev/null)
-HTSLIB_LIBS := $(shell pkg-config --libs htslib 2>/dev/null)
+HTSLIB_LIBS := $(shell pkg-config --libs --static htslib 2>/dev/null)
 
 # Fallback if pkg-config doesn't find htslib
 ifeq ($(HTSLIB_LIBS),)
@@ -48,8 +48,12 @@ ifeq ($(HTSLIB_LIBS),)
     endif
 endif
 
+# Additional libraries that htslib may depend on (for static linking)
+# These are commonly needed on HPC clusters with static htslib builds
+EXTRA_LIBS = -lm -lpthread -lz -lbz2 -llzma -lcurl -lssl -lcrypto -ldeflate
+
 CFLAGS += $(HTSLIB_CFLAGS) $(INCLUDES)
-LDFLAGS += $(HTSLIB_LIBS) -lm -lpthread -lz
+LDFLAGS += $(HTSLIB_LIBS) $(EXTRA_LIBS)
 
 # Default target
 all: check-htslib $(BUILD_DIR) $(PROG)
