@@ -39,6 +39,7 @@ void sample_usage(void) {
     fprintf(stderr, "                        [default: min]\n");
     fprintf(stderr, "  --seed INT            Random seed for deterministic sampling [default: %d]\n", DEFAULT_SEED);
     fprintf(stderr, "  --no-sort             Do not sort and index output BAM file\n");
+    fprintf(stderr, "  --no-metrics          Do not calculate metrics (faster)\n");
     fprintf(stderr, "  -h, --help            Show this help message\n");
 }
 
@@ -354,8 +355,8 @@ int sample_run(sample_args_t *args) {
         }
     }
     
-    /* Calculate and print metrics */
-    if (ret == 0) {
+    /* Calculate and print metrics (unless disabled) */
+    if (ret == 0 && !args->no_metrics) {
         fprintf(stderr, "[sample] Computing metrics...\n");
         
         /* Get output depth */

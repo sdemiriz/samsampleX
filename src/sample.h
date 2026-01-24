@@ -24,6 +24,7 @@ typedef struct {
     combine_mode_t mode;                        /* How to combine multiple templates */
     uint32_t seed;                              /* Random seed */
     int no_sort;                                /* Skip sorting/indexing if true */
+    int no_metrics;                             /* Skip metrics calculation if true */
 } sample_args_t;
 
 /*

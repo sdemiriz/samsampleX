@@ -270,6 +270,7 @@ rule samsampleX_c_map:
 rule samsampleX_c_sampling:
     """
     Downsample the input BAM file using samsampleX (C version)
+    Fair comparison: no sorting/indexing, no metrics calculation
     """
     input:
         bam=TARGET_BAM,
@@ -297,6 +298,8 @@ rule samsampleX_c_sampling:
         --template-bed {input.template} \
         --template-bed {input.template} \
         --out-bam {output.bam} \
+        --no-sort \
+        --no-metrics \
         --region {params.chr}:{params.start}-{params.end} \
         --seed {params.seed} \
         --mode {params.mode}

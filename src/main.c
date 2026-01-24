@@ -91,6 +91,7 @@ static int parse_sample_args(int argc, char *argv[], sample_args_t *args) {
         {"mode",         required_argument, 0, 'm'},
         {"seed",         required_argument, 0, 'S'},
         {"no-sort",      no_argument,       0, 'n'},
+        {"no-metrics",   no_argument,       0, 'M'},
         {"help",         no_argument,       0, 'h'},
         {0, 0, 0, 0}
     };
@@ -101,6 +102,7 @@ static int parse_sample_args(int argc, char *argv[], sample_args_t *args) {
     args->seed = DEFAULT_SEED;
     args->out_bam = DEFAULT_OUT_BAM;
     args->no_sort = 0;
+    args->no_metrics = 0;
     
     int opt;
     int option_index = 0;
@@ -108,7 +110,7 @@ static int parse_sample_args(int argc, char *argv[], sample_args_t *args) {
     /* Reset getopt for subcommand parsing */
     optind = 1;
     
-    while ((opt = getopt_long(argc, argv, "s:t:r:o:m:S:nh", long_options, &option_index)) != -1) {
+    while ((opt = getopt_long(argc, argv, "s:t:r:o:m:S:nMh", long_options, &option_index)) != -1) {
         switch (opt) {
             case 's':
                 args->source_bam = optarg;
@@ -134,6 +136,9 @@ static int parse_sample_args(int argc, char *argv[], sample_args_t *args) {
                 break;
             case 'n':
                 args->no_sort = 1;
+                break;
+            case 'M':
+                args->no_metrics = 1;
                 break;
             case 'h':
                 sample_usage();

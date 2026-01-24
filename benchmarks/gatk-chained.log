@@ -1,0 +1,23 @@
+	Command being timed: "gatk --java-options -Xmx16g DownsampleSam -S Chained -P 0.1 -R 42 -I HG002.GRCh38.300x-chr21-1-46709982.bam -O gatk-chained.bam"
+	User time (seconds): 154.52
+	System time (seconds): 11.72
+	Percent of CPU this job got: 99%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:47.16
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 1426192
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 231
+	Minor (reclaiming a frame) page faults: 55466
+	Voluntary context switches: 3470464
+	Involuntary context switches: 3464348
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 1792856
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

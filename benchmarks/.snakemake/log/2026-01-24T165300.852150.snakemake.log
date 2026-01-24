@@ -1,0 +1,64 @@
+host: narval1
+Building DAG of jobs...
+SLURM run ID: 94ae2b79-a815-4c0e-a867-33a817a5e29c
+MinJobAge 300s (>= 120s). 'squeue' should work reliably for status queries.
+Using shell: /cvmfs/soft.computecanada.ca/gentoo/2023/x86-64-v3/usr/bin/bash
+Provided remote nodes: 10
+Job stats:
+job                      count
+---------------------  -------
+GATK_Chained                 1
+GATK_ConstantMemory          1
+GATK_HighAccuracy            1
+all                          1
+preprocess_input_bam         1
+results                      1
+sambamba                     1
+samsampleX_c_map             1
+samsampleX_c_sampling        1
+samtools                     1
+total                       10
+
+Select jobs to execute...
+Execute 1 jobs...
+[Sat Jan 24 16:53:01 2026]
+rule preprocess_input_bam:
+    input: ../../HG002.GRCh38.300x.bam
+    output: HG002.GRCh38.300x-chr21-1-46709982.bam, HG002.GRCh38.300x-chr21-1-46709982.bam.bai
+    jobid: 3
+    reason: Missing output files: HG002.GRCh38.300x-chr21-1-46709982.bam, HG002.GRCh38.300x-chr21-1-46709982.bam.bai
+    resources: mem_mb=16384, mem_mib=15625, disk_mb=1146681, disk_mib=1093561, tmpdir=<TBD>, slurm_account=rrg-vmooser_cpu, slurm_partition=default, cpus=4, time=24:00:00
+Shell command: 
+        samtools view ../../HG002.GRCh38.300x.bam chr21:1-46709982 -b -o HG002.GRCh38.300x-chr21-1-46709982.bam &&         samtools index HG002.GRCh38.300x-chr21-1-46709982.bam
+        
+No wall time information given. This might or might not work on your cluster. If not, specify the resource runtime in your rule or as a reasonable default via --default-resources.
+Job 3 has been submitted with SLURM jobid 55586926 (log: /lustre06/project/6061810/sdemiriz/subsample-reads/samsampleX-c/benchmarks/.snakemake/slurm_logs/rule_preprocess_input_bam/55586926.log).
+[Sat Jan 24 16:54:31 2026]
+Error in rule preprocess_input_bam:
+    message: SLURM-job '55586926' failed, SLURM status is: 'FAILED'. For further error details see the cluster/cloud log and the log files of the involved rule(s).
+    jobid: 3
+    input: ../../HG002.GRCh38.300x.bam
+    output: HG002.GRCh38.300x-chr21-1-46709982.bam, HG002.GRCh38.300x-chr21-1-46709982.bam.bai
+    log: /lustre06/project/6061810/sdemiriz/subsample-reads/samsampleX-c/benchmarks/.snakemake/slurm_logs/rule_preprocess_input_bam/55586926.log (check log file(s) for error details)
+    shell:
+        
+        samtools view ../../HG002.GRCh38.300x.bam chr21:1-46709982 -b -o HG002.GRCh38.300x-chr21-1-46709982.bam &&         samtools index HG002.GRCh38.300x-chr21-1-46709982.bam
+        
+        (command exited with non-zero exit code)
+    external_jobid: 55586926
+Cleaning up SLURM log files older than 10 day(s).
+Exiting because a job execution failed. Look below for error messages
+[Sat Jan 24 16:55:31 2026]
+Error in rule preprocess_input_bam:
+    message: None
+    jobid: 3
+    input: ../../HG002.GRCh38.300x.bam
+    output: HG002.GRCh38.300x-chr21-1-46709982.bam, HG002.GRCh38.300x-chr21-1-46709982.bam.bai
+    shell:
+        
+        samtools view ../../HG002.GRCh38.300x.bam chr21:1-46709982 -b -o HG002.GRCh38.300x-chr21-1-46709982.bam &&         samtools index HG002.GRCh38.300x-chr21-1-46709982.bam
+        
+        (command exited with non-zero exit code)
+Complete log(s): /lustre06/project/6061810/sdemiriz/subsample-reads/samsampleX-c/benchmarks/.snakemake/log/2026-01-24T165300.852150.snakemake.log
+WorkflowError:
+At least one job did not complete successfully.

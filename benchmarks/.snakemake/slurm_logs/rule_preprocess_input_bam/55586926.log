@@ -1,0 +1,95 @@
+host: nc11107
+Building DAG of jobs...
+Using shell: /cvmfs/soft.computecanada.ca/gentoo/2023/x86-64-v3/usr/bin/bash
+Provided remote nodes: 1
+Select jobs to execute...
+Execute 1 jobs...
+
+[Sat Jan 24 16:53:52 2026]
+rule preprocess_input_bam:
+    input: ../../HG002.GRCh38.300x.bam
+    output: HG002.GRCh38.300x-chr21-1-46709982.bam, HG002.GRCh38.300x-chr21-1-46709982.bam.bai
+    jobid: 0
+    reason: Forced execution
+    resources: mem_mb=16384, mem_mib=15625, disk_mb=1146681, disk_mib=1093561, tmpdir=<TBD>, slurm_account=rrg-vmooser_cpu, slurm_partition=default, cpus=4, time=24:00:00
+Shell command: 
+        samtools view ../../HG002.GRCh38.300x.bam chr21:1-46709982 -b -o HG002.GRCh38.300x-chr21-1-46709982.bam &&         samtools index HG002.GRCh38.300x-chr21-1-46709982.bam
+        
+host: nc11107
+Building DAG of jobs...
+Using shell: /cvmfs/soft.computecanada.ca/gentoo/2023/x86-64-v3/usr/bin/bash
+Provided cores: 1 (use --cores to define parallelism)
+Rules claiming more threads will be scaled down.
+Select jobs to execute...
+Execute 1 jobs...
+
+[Sat Jan 24 16:53:54 2026]
+localrule preprocess_input_bam:
+    input: ../../HG002.GRCh38.300x.bam
+    output: HG002.GRCh38.300x-chr21-1-46709982.bam, HG002.GRCh38.300x-chr21-1-46709982.bam.bai
+    jobid: 0
+    reason: Forced execution
+    resources: mem_mb=16384, mem_mib=15625, disk_mb=1146681, disk_mib=1093561, tmpdir=/tmp, slurm_account=rrg-vmooser_cpu, slurm_partition=default, cpus=4, time=24:00:00
+Shell command: 
+        samtools view ../../HG002.GRCh38.300x.bam chr21:1-46709982 -b -o HG002.GRCh38.300x-chr21-1-46709982.bam &&         samtools index HG002.GRCh38.300x-chr21-1-46709982.bam
+        
+/cvmfs/soft.computecanada.ca/gentoo/2023/x86-64-v3/usr/bin/bash: line 2: samtools: command not found
+RuleException:
+CalledProcessError in file "/lustre06/project/6061810/sdemiriz/subsample-reads/samsampleX-c/benchmarks/Snakefile", line 98:
+Command 'set -euo pipefail;  
+        samtools view ../../HG002.GRCh38.300x.bam chr21:1-46709982 -b -o HG002.GRCh38.300x-chr21-1-46709982.bam &&         samtools index HG002.GRCh38.300x-chr21-1-46709982.bam' returned non-zero exit status 127.
+[Sat Jan 24 16:53:54 2026]
+Error in rule preprocess_input_bam:
+    message: None
+    jobid: 0
+    input: ../../HG002.GRCh38.300x.bam
+    output: HG002.GRCh38.300x-chr21-1-46709982.bam, HG002.GRCh38.300x-chr21-1-46709982.bam.bai
+    shell:
+        
+        samtools view ../../HG002.GRCh38.300x.bam chr21:1-46709982 -b -o HG002.GRCh38.300x-chr21-1-46709982.bam &&         samtools index HG002.GRCh38.300x-chr21-1-46709982.bam
+        
+        (command exited with non-zero exit code)
+Shutting down, this might take some time.
+Exiting because a job execution failed. Look below for error messages
+[Sat Jan 24 16:53:54 2026]
+Error in rule preprocess_input_bam:
+    message: None
+    jobid: 0
+    input: ../../HG002.GRCh38.300x.bam
+    output: HG002.GRCh38.300x-chr21-1-46709982.bam, HG002.GRCh38.300x-chr21-1-46709982.bam.bai
+    shell:
+        
+        samtools view ../../HG002.GRCh38.300x.bam chr21:1-46709982 -b -o HG002.GRCh38.300x-chr21-1-46709982.bam &&         samtools index HG002.GRCh38.300x-chr21-1-46709982.bam
+        
+        (command exited with non-zero exit code)
+Storing output in storage.
+WorkflowError:
+At least one job did not complete successfully.
+srun: error: nc11107: task 0: Exited with exit code 1
+[Sat Jan 24 16:53:55 2026]
+Error in rule preprocess_input_bam:
+    message: None
+    jobid: 0
+    input: ../../HG002.GRCh38.300x.bam
+    output: HG002.GRCh38.300x-chr21-1-46709982.bam, HG002.GRCh38.300x-chr21-1-46709982.bam.bai
+    shell:
+        
+        samtools view ../../HG002.GRCh38.300x.bam chr21:1-46709982 -b -o HG002.GRCh38.300x-chr21-1-46709982.bam &&         samtools index HG002.GRCh38.300x-chr21-1-46709982.bam
+        
+        (command exited with non-zero exit code)
+Shutting down, this might take some time.
+Exiting because a job execution failed. Look below for error messages
+[Sat Jan 24 16:53:55 2026]
+Error in rule preprocess_input_bam:
+    message: None
+    jobid: 0
+    input: ../../HG002.GRCh38.300x.bam
+    output: HG002.GRCh38.300x-chr21-1-46709982.bam, HG002.GRCh38.300x-chr21-1-46709982.bam.bai
+    shell:
+        
+        samtools view ../../HG002.GRCh38.300x.bam chr21:1-46709982 -b -o HG002.GRCh38.300x-chr21-1-46709982.bam &&         samtools index HG002.GRCh38.300x-chr21-1-46709982.bam
+        
+        (command exited with non-zero exit code)
+Storing output in storage.
+WorkflowError:
+At least one job did not complete successfully.
