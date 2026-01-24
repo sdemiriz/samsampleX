@@ -88,10 +88,53 @@ uninstall:
 
 # Clean
 clean:
-	rm -rf $(BUILD_DIR) $(PROG)
+	rm -rf $(BUILD_DIR) $(PROG) tests/test_parsing tests/test_depth tests/test_metrics
+
+# ============================================================
+# Testing
+# ============================================================
+
+TEST_DIR = tests
+
+# Test executables
+TEST_PARSING = $(TEST_DIR)/test_parsing
+TEST_DEPTH = $(TEST_DIR)/test_depth
+TEST_METRICS = $(TEST_DIR)/test_metrics
+
+# Test object files (reuse some from main build)
+TEST_OBJS_COMMON = $(BUILD_DIR)/depth.o $(BUILD_DIR)/bed.o
+
+# Build test executables
+$(TEST_PARSING): $(TEST_DIR)/test_parsing.c $(BUILD_DIR)/depth.o $(BUILD_DIR)/bed.o | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(BUILD_DIR)/depth.o $(BUILD_DIR)/bed.o $(LDFLAGS)
+
+$(TEST_DEPTH): $(TEST_DIR)/test_depth.c $(BUILD_DIR)/bed.o | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(BUILD_DIR)/bed.o $(LDFLAGS)
+
+$(TEST_METRICS): $(TEST_DIR)/test_metrics.c $(BUILD_DIR)/metrics.o $(BUILD_DIR)/bed.o | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -o $@ $< $(BUILD_DIR)/metrics.o $(BUILD_DIR)/bed.o $(LDFLAGS)
+
+# Run unit tests
+test-unit: $(TEST_PARSING) $(TEST_DEPTH) $(TEST_METRICS)
+	@echo ""
+	@echo "Running unit tests..."
+	@echo "========================================"
+	@$(TEST_PARSING) && $(TEST_DEPTH) && $(TEST_METRICS)
+
+# Run integration tests (requires main program to be built)
+test-integration: $(PROG)
+	@echo ""
+	@echo "Running integration tests..."
+	@echo "========================================"
+	@$(TEST_DIR)/integration_tests.sh
+
+# Run all tests
+test: test-unit test-integration
+	@echo ""
+	@echo "All tests completed successfully!"
 
 # Phony targets
-.PHONY: all check-htslib install uninstall clean
+.PHONY: all check-htslib install uninstall clean test test-unit test-integration
 
 # Dependencies (auto-generated would be better, but keep it simple)
 $(BUILD_DIR)/main.o: $(SRC_DIR)/main.c $(INC_DIR)/samsampleX.h $(SRC_DIR)/map.h $(SRC_DIR)/sample.h

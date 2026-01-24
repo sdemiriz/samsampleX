@@ -2,6 +2,11 @@
 build/
 samsampleX
 
+# Test executables
+tests/test_parsing
+tests/test_depth
+tests/test_metrics
+
 # Test files (root level)
 *.bam
 *.bai
