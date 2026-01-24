@@ -2,10 +2,18 @@
 build/
 samsampleX
 
-# Test files
+# Test files (root level)
 *.bam
 *.bai
 *.bed
+
+# Benchmark outputs
+benchmarks/.snakemake/
+benchmarks/*.log
+benchmarks/*.bam
+benchmarks/*.bai
+benchmarks/*.tsv
+benchmarks/*.bed
 
 # Editor files
 *.swp
