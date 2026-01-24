@@ -103,7 +103,7 @@ samsampleX sample \
     --region chr1:1000-2000 \
     --out-bam sampled.bam
 
-# With multiple templates (combines using 'min' by default)
+# With multiple templates (combines using 'random' by default)
 samsampleX sample \
     --source-bam source.bam \
     --template-bed template1.bed \
@@ -141,7 +141,7 @@ samsampleX sample \
 | `--template-bed FILE` | Template BED file(s) (required, repeatable) | - |
 | `--region REGION` | Target region, samtools-style (required) | - |
 | `--out-bam FILE` | Output BAM file | `out.bam` |
-| `--mode MODE` | Combine mode: min, max, mean, random | `min` |
+| `--mode MODE` | Combine mode: min, max, mean, random | `random` |
 | `--seed INT` | Random seed for reproducibility | `42` |
 | `--no-sort` | Skip sorting and indexing output | false |
 

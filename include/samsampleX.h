@@ -20,7 +20,7 @@
 #define DEFAULT_SEED 42
 #define DEFAULT_OUT_BED "out.bed"
 #define DEFAULT_OUT_BAM "out.bam"
-#define DEFAULT_MODE MODE_MIN
+#define DEFAULT_MODE MODE_RANDOM
 
 /* Combine modes for multiple BED templates */
 typedef enum {
