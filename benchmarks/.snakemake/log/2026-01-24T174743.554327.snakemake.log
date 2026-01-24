@@ -1,0 +1,60 @@
+host: narval1
+Building DAG of jobs...
+SLURM run ID: 655ee946-da71-4532-803d-5b6e65204dcd
+MinJobAge 300s (>= 120s). 'squeue' should work reliably for status queries.
+Using shell: /cvmfs/soft.computecanada.ca/gentoo/2023/x86-64-v3/usr/bin/bash
+Provided remote nodes: 10
+Job stats:
+job                      count
+---------------------  -------
+all                          1
+results                      1
+samsampleX_c_sampling        1
+total                        3
+
+Select jobs to execute...
+Execute 1 jobs...
+[Sat Jan 24 17:47:43 2026]
+rule samsampleX_c_sampling:
+    input: HG002.GRCh38.300x-chr21-1-46709982.bam, HG002.GRCh38.300x-chr21-1-46709982.bam.bai, HG00157-chr21-1-46709982.bed, ../samsampleX
+    output: samsampleX-c-sample.bam, samsampleX-c-sample.log
+    jobid: 11
+    reason: Missing output files: samsampleX-c-sample.log
+    resources: mem_mb=16384, mem_mib=15625, disk_mb=14445, disk_mib=13776, tmpdir=<TBD>, slurm_account=rrg-vmooser_cpu, slurm_partition=default, cpus=4, time=24:00:00
+Shell command: 
+        env time -o samsampleX-c-sample.log -v         ../samsampleX sample         --source-bam HG002.GRCh38.300x-chr21-1-46709982.bam         --template-bed HG00157-chr21-1-46709982.bed         --template-bed HG00157-chr21-1-46709982.bed         --out-bam samsampleX-c-sample.bam         --no-sort         --no-metrics         --region chr21:1-46709982         --seed 42         --mode mean
+        
+No wall time information given. This might or might not work on your cluster. If not, specify the resource runtime in your rule or as a reasonable default via --default-resources.
+Job 11 has been submitted with SLURM jobid 55589061 (log: /lustre06/project/6061810/sdemiriz/subsample-reads/samsampleX-c/benchmarks/.snakemake/slurm_logs/rule_samsampleX_c_sampling/55589061.log).
+[Sat Jan 24 17:57:44 2026]
+Finished jobid: 11 (Rule: samsampleX_c_sampling)
+1 of 3 steps (33%) done
+Select jobs to execute...
+Execute 1 jobs...
+[Sat Jan 24 17:57:44 2026]
+rule results:
+    input: gatk-high-accuracy.log, gatk-constant-memory.log, gatk-chained.log, samtools.log, sambamba.log, samsampleX-c-map.log, samsampleX-c-sample.log
+    output: results.tsv
+    jobid: 1
+    reason: Missing output files: results.tsv; Input files updated by another job: samsampleX-c-sample.log
+    resources: mem_mb=16384, mem_mib=15625, disk_mb=1000, disk_mib=954, tmpdir=<TBD>, slurm_account=rrg-vmooser_cpu, slurm_partition=default, cpus=4, time=24:00:00
+Shell command: None
+No wall time information given. This might or might not work on your cluster. If not, specify the resource runtime in your rule or as a reasonable default via --default-resources.
+Job 1 has been submitted with SLURM jobid 55589151 (log: /lustre06/project/6061810/sdemiriz/subsample-reads/samsampleX-c/benchmarks/.snakemake/slurm_logs/rule_results/55589151.log).
+[Sat Jan 24 18:01:25 2026]
+Finished jobid: 1 (Rule: results)
+2 of 3 steps (67%) done
+Select jobs to execute...
+Execute 1 jobs...
+[Sat Jan 24 18:01:25 2026]
+localrule all:
+    input: results.tsv
+    jobid: 0
+    reason: Input files updated by another job: results.tsv
+    resources: mem_mb=1000, mem_mib=954, disk_mb=1000, disk_mib=954, tmpdir=/tmp, slurm_account=rrg-vmooser_cpu, slurm_partition=default
+Shell command: None
+[Sat Jan 24 18:01:25 2026]
+Finished jobid: 0 (Rule: all)
+3 of 3 steps (100%) done
+Cleaning up SLURM log files older than 10 day(s).
+Complete log(s): /lustre06/project/6061810/sdemiriz/subsample-reads/samsampleX-c/benchmarks/.snakemake/log/2026-01-24T174743.554327.snakemake.log

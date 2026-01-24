@@ -295,8 +295,7 @@ rule samsampleX_c_sampling:
         env time -o {output.log} -v \
         {input.binary} sample \
         --source-bam {input.bam} \
-        --template-bed {input.template} \
-        --template-bed {input.template} \
+        --template-bed {input.template} {input.template} \
         --out-bam {output.bam} \
         --no-sort \
         --no-metrics \

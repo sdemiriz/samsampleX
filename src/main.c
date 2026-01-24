@@ -81,6 +81,9 @@ static int parse_map_args(int argc, char *argv[], map_args_t *args) {
 
 /*
  * Parse arguments for the 'sample' subcommand.
+ * 
+ * Note: --template-bed accepts multiple files: --template-bed file1.bed file2.bed ...
+ * Files are collected until the next option (starting with -) or end of arguments.
  */
 static int parse_sample_args(int argc, char *argv[], sample_args_t *args) {
     static struct option long_options[] = {
@@ -116,11 +119,27 @@ static int parse_sample_args(int argc, char *argv[], sample_args_t *args) {
                 args->source_bam = optarg;
                 break;
             case 't':
+                /* First BED file from optarg */
+                if (args->n_template_beds > 0) {
+                    fprintf(stderr, "Error: --template-bed can only be specified once\n");
+                    fprintf(stderr, "       Use: --template-bed file1.bed file2.bed ...\n");
+                    return -1;
+                }
                 if (args->n_template_beds >= MAX_TEMPLATE_BEDS) {
                     fprintf(stderr, "Error: Too many template BED files (max %d)\n", MAX_TEMPLATE_BEDS);
                     return -1;
                 }
                 args->template_beds[args->n_template_beds++] = optarg;
+                
+                /* Collect additional BED files until next option or end */
+                while (optind < argc && argv[optind][0] != '-') {
+                    if (args->n_template_beds >= MAX_TEMPLATE_BEDS) {
+                        fprintf(stderr, "Error: Too many template BED files (max %d)\n", MAX_TEMPLATE_BEDS);
+                        return -1;
+                    }
+                    args->template_beds[args->n_template_beds++] = argv[optind];
+                    optind++;
+                }
                 break;
             case 'r':
                 args->region = optarg;

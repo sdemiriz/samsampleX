@@ -30,9 +30,10 @@ void sample_usage(void) {
     fprintf(stderr, "Usage: %s sample [options]\n\n", SAMSAMPLEX_NAME);
     fprintf(stderr, "Sample reads from a BAM file to match depth distribution from template BED(s).\n\n");
     fprintf(stderr, "Required options:\n");
-    fprintf(stderr, "  --source-bam FILE     Input BAM file to sample reads from\n");
-    fprintf(stderr, "  --template-bed FILE   Template BED file(s) with depth values (can be repeated)\n");
-    fprintf(stderr, "  --region REGION       Target region (samtools-style)\n\n");
+    fprintf(stderr, "  --source-bam FILE       Input BAM file to sample reads from\n");
+    fprintf(stderr, "  --template-bed FILE(s)  Template BED file(s) with depth values\n");
+    fprintf(stderr, "                          Multiple files: --template-bed f1.bed f2.bed f3.bed\n");
+    fprintf(stderr, "  --region REGION         Target region (samtools-style)\n\n");
     fprintf(stderr, "Optional:\n");
     fprintf(stderr, "  --out-bam FILE        Output BAM file [default: %s]\n", DEFAULT_OUT_BAM);
     fprintf(stderr, "  --mode MODE           How to combine multiple templates: min, max, mean, random\n");
