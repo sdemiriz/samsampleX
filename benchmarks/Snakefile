@@ -1,0 +1,348 @@
+
+### CONFIGURATION
+SEED = 42
+
+CHR = "chr21"
+START = 1
+END = 46709982
+
+# CHR = "chr6"
+# START = 29941260
+# END = 29949572
+
+INPUT_URL = "wget https://ftp.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/AshkenazimTrio/HG002_NA24385_son/NIST_HiSeq_HG002_Homogeneity-10953946/NHGRI_Illumina300X_AJtrio_novoalign_bams/HG002.GRCh38.300x.bam"
+INPUT_PREFIX = "HG002.GRCh38.300x"
+INPUT_BAM = f"../../{INPUT_PREFIX}.bam"
+
+TARGET_BAM = f"{INPUT_PREFIX}-{CHR}-{START}-{END}.bam"
+
+TEMPLATE_URL = "ftp://ftp.sra.ebi.ac.uk/vol1/run/ERR324/ERR3240157/HG00157.final.cram"
+TEMPLATE_PREFIX = "HG00157"
+TEMPLATE_BAM = f"../../{TEMPLATE_PREFIX}.bam"
+TEMPLATE = f"{TEMPLATE_PREFIX}-{CHR}-{START}-{END}.bed"
+
+# Path to the C samsampleX binary (built from parent directory)
+SAMSAMPLEX_C = "../samsampleX"
+
+### RESOURCES
+CPU = 4
+MEM_MB = 16384
+TIME = "24:00:00"
+
+
+### RULES
+rule all:
+    input:
+        "results.tsv"
+
+rule build_samsampleX_c:
+    """
+    Build the C version of samsampleX if not already built
+    """
+    output:
+        binary=SAMSAMPLEX_C,
+    shell:
+        """
+        cd .. && make
+        """
+
+rule download_input_bam:
+    """
+    Download the input BAM file and index
+    """
+    params:
+        url=INPUT_URL,
+    output:
+        bam=INPUT_BAM,
+    shell:
+        """
+        wget {params.url} -o {output.bam} && \
+        samtools index {output.bam}
+        """
+
+rule download_template_bam:
+    """
+    Download the template CRAM file, convert to BAM and index
+    """
+    params:
+        url=TEMPLATE_URL,
+        cram="template.cram",
+    output:
+        bam=TEMPLATE_BAM,
+    shell:
+        """
+        wget {params.url} -o {params.cram} && \
+        samtools view {params.cram} -b -o {output.bam} && \
+        rm {params.cram} && \
+        samtools index {output.bam}
+        """
+
+rule preprocess_input_bam:
+    """
+    Preprocess the input BAM file to target the specified region
+    """
+    input:
+        bam=INPUT_BAM,
+    params:
+        chr=CHR,
+        start=START,
+        end=END,
+    output:
+        bam=TARGET_BAM,
+        index=TARGET_BAM + ".bai",
+    resources:
+        cpus=CPU,
+        mem_mb=MEM_MB,
+        time=TIME,
+    shell:
+        """
+        samtools view {input.bam} {params.chr}:{params.start}-{params.end} -b -o {output.bam} && \
+        samtools index {output.bam}
+        """
+
+
+rule GATK_HighAccuracy:
+    """
+    Downsample the input BAM file using GATK HighAccuracy
+    """
+    input:
+        bam=TARGET_BAM,
+        index=TARGET_BAM + ".bai",
+    params:
+        seed=SEED,
+        coefficient=0.1,
+    output:
+        bam=f"gatk-high-accuracy.bam",
+        log=f"gatk-high-accuracy.log",
+    resources:
+        cpus=CPU,
+        mem_mb=MEM_MB,
+        time=TIME,
+    shell:
+        """
+        env time -o {output.log} -v \
+        gatk --java-options "-Xmx16g" DownsampleSam \
+        -S HighAccuracy \
+        -P {params.coefficient} \
+        -R {params.seed} \
+        -I {input.bam} \
+        -O {output.bam}
+        """
+
+rule GATK_ConstantMemory:
+    """
+    Downsample the input BAM file using GATK ConstantMemory
+    """
+    input:
+        bam=TARGET_BAM,
+        index=TARGET_BAM + ".bai",
+    params:
+        seed=SEED,
+        coefficient=0.1,
+    output:
+        bam=f"gatk-constant-memory.bam",
+        log=f"gatk-constant-memory.log",
+    resources:
+        cpus=CPU,
+        mem_mb=MEM_MB,
+        time=TIME,
+    shell:
+        """
+        env time -o {output.log} -v \
+        gatk --java-options "-Xmx16g" DownsampleSam \
+        -S ConstantMemory \
+        -P {params.coefficient} \
+        -R {params.seed} \
+        -I {input.bam} \
+        -O {output.bam}
+        """
+
+rule GATK_Chained:
+    """
+    Downsample the input BAM file using GATK Chained
+    """
+    input:
+        bam=TARGET_BAM,
+        index=TARGET_BAM + ".bai",
+    params:
+        seed=SEED,
+        coefficient=0.1,
+    output:
+        bam=f"gatk-chained.bam",
+        log=f"gatk-chained.log",
+    resources:
+        cpus=CPU,
+        mem_mb=MEM_MB,
+        time=TIME,
+    shell:
+        """
+        env time -o {output.log} -v \
+        gatk --java-options "-Xmx16g" DownsampleSam \
+        -S Chained \
+        -P {params.coefficient} \
+        -R {params.seed} \
+        -I {input.bam} \
+        -O {output.bam}
+        """
+
+rule samtools:
+    """
+    Downsample the input BAM file using samtools
+    """
+    input:
+        bam=TARGET_BAM,
+        index=TARGET_BAM + ".bai",
+    params:
+        seed=SEED,
+        coefficient=".1",
+    output:
+        bam="samtools.bam",
+        log="samtools.log",
+    resources:
+        cpus=CPU,
+        mem_mb=MEM_MB,
+        time=TIME,
+    shell:
+        """
+        env time -o {output.log} -v \
+        samtools view \
+        {input.bam} \
+        -s {params.seed}{params.coefficient} \
+        -b -o {output.bam}
+        """
+
+rule sambamba:
+    """
+    Downsample the input BAM file using sambamba
+    """
+    input:
+        bam=TARGET_BAM,
+        index=TARGET_BAM + ".bai",
+    params:
+        seed=SEED,
+        coefficient=".1",
+    output:
+        bam="sambamba.bam",
+        log="sambamba.log",
+    resources:
+        cpus=CPU,
+        mem_mb=MEM_MB,
+        time=TIME,  
+    shell:
+        """
+        env time -o {output.log} -v \
+        sambamba view \
+        {input.bam} \
+        -s {params.seed}{params.coefficient} \
+        -o {output.bam}
+        """
+
+rule samsampleX_c_map:
+    """
+    Map the template BAM file using samsampleX (C version)
+    """
+    input:
+        bam=TARGET_BAM,
+        index=TARGET_BAM + ".bai",
+        binary=SAMSAMPLEX_C,
+    params:
+        chr=CHR,
+        start=START,
+        end=END,
+        collapse=1,
+    output:
+        bed=TEMPLATE,
+        log="samsampleX-c-map.log",
+    resources:
+        cpus=CPU,
+        mem_mb=MEM_MB,
+        time=TIME,
+    shell:
+        """
+        env time -o {output.log} -v \
+        {input.binary} map \
+        --template-bam {TEMPLATE_BAM} \
+        --region {params.chr}:{params.start}-{params.end} \
+        --out-bed {output.bed} \
+        --collapse {params.collapse}
+        """
+
+rule samsampleX_c_sampling:
+    """
+    Downsample the input BAM file using samsampleX (C version)
+    """
+    input:
+        bam=TARGET_BAM,
+        index=TARGET_BAM + ".bai",
+        template=TEMPLATE,
+        binary=SAMSAMPLEX_C,
+    params:
+        seed=SEED,
+        mode="mean",
+        chr=CHR,
+        start=START,
+        end=END,
+    output:
+        bam="samsampleX-c-sample.bam",
+        log="samsampleX-c-sample.log",
+    resources:
+        cpus=CPU,
+        mem_mb=MEM_MB,
+        time=TIME,
+    shell:
+        """
+        env time -o {output.log} -v \
+        {input.binary} sample \
+        --source-bam {input.bam} \
+        --template-bed {input.template} \
+        --template-bed {input.template} \
+        --out-bam {output.bam} \
+        --region {params.chr}:{params.start}-{params.end} \
+        --seed {params.seed} \
+        --mode {params.mode}
+        """
+
+rule results:
+    input:
+        gatk_high_accuracy="gatk-high-accuracy.log",
+        gatk_constant_memory="gatk-constant-memory.log",
+        gatk_chained="gatk-chained.log",
+        samtools="samtools.log",
+        sambamba="sambamba.log",
+        samsampleX_c_map="samsampleX-c-map.log",
+        samsampleX_c_sample="samsampleX-c-sample.log",
+    output:
+        results="results.tsv"
+    resources:
+        cpus=CPU,
+        mem_mb=MEM_MB,
+        time=TIME,
+    run:
+        import os
+        
+        def parse_log(filepath):
+            data = {}
+            with open(filepath) as f:
+                for line in f:
+                    line = line.strip()
+                    if ': ' in line:
+                        key, val = line.split(': ', 1)
+                        data[key.strip()] = val.strip()
+            return data
+        
+        results = {}
+        headers = []
+        
+        for name, path in input._allitems():
+            data = parse_log(path)
+            results[name] = data
+            if not headers:
+                headers = list(data.keys())
+        
+        with open(output.results, 'w') as out:
+            out.write('\t'.join(['Tool'] + headers) + '\n')
+            for tool, data in results.items():
+                row = [tool] + [data.get(h, '') for h in headers]
+                out.write('\t'.join(row) + '\n')
+
+
