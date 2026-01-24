@@ -54,6 +54,33 @@ sudo make install
 make PREFIX=$HOME/.local install
 ```
 
+## Testing
+
+Run the full test suite:
+
+```bash
+make test
+```
+
+Or run specific test types:
+
+```bash
+# Unit tests only (region parsing, depth arrays, metrics)
+make test-unit
+
+# Integration tests only (CLI interface)
+make test-integration
+```
+
+### Test Coverage
+
+| Test File | Description |
+|-----------|-------------|
+| `test_parsing.c` | Region string parsing, combine mode parsing |
+| `test_depth.c` | Depth array allocation, combine operations |
+| `test_metrics.c` | MAE, Wasserstein distance calculations |
+| `integration_tests.sh` | CLI help, subcommand arguments, error handling |
+
 ## Usage
 
 ### Map: Extract depth template
