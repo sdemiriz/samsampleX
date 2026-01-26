@@ -1,79 +1,84 @@
 # samsampleX
+A C-based tool for customizable BAM file downsampling. Sample reads from a source BAM file to match the depth of coverage distribution of one or more template BAM file(s).
 
-A C tool for depth-aware BAM file sampling. Sample reads from a source BAM file to match the depth distribution of a template BAM file.
-
-## Features
-
-- **map**: Extract depth of coverage from a BAM file to a BED template
-- **sample**: Sample reads from a BAM to match template depth distribution
-- Deterministic sampling using xxHash for reproducible results
-- Support for multiple template BED files with combine modes (min, max, mean, random)
-- Calculates quality metrics (Wasserstein distance, MAE)
-- Collapse option for compact BED output
-
-## Requirements
-
-- **htslib** (for BAM I/O)
-- **samtools** (for sorting/indexing, must be in PATH)
-- C compiler (gcc or clang)
-- make
+## Features:
+- Reproducable, deterministic downsampling using integer seeds.
+- Aggregate depth selection using multiple BED templates via select metrics (`min`, `max`, `mean`, `random`).
+- BED template compression and/or smoothing.
+- Calculation of quality metrics:
+    - Wasserstein distance: distribution-wide downsampling performance.
+    - MAE: per-base downsampling performance.
 
 ## Installation
+### Requirements
 
-### 1. Install htslib
+- htslib
+- samtools
+- C compiler (gcc/clang)
+- make
 
+### Build samsampleX
 ```bash
-# Ubuntu/Debian
-sudo apt install libhts-dev
-
-# macOS (Homebrew)
-brew install htslib
-
-# From source
-git clone https://github.com/samtools/htslib
-cd htslib
-make
-sudo make install
-```
-
-### 2. Build samsampleX
-
-```bash
-git clone <repository>
-cd samsampleX-c
+git clone https://github.com/sdemiriz/samsampleX.git
+cd samsampleX
 make
 ```
 
-### 3. Install (optional)
-
+### Install
 ```bash
-# System-wide (requires root)
+# System-wide
 sudo make install
-
-# User-local install
-make PREFIX=$HOME/.local install
 ```
+
+## Usage
+### Mapping
+Extract depth of coverage from template BAM to BED template with optional smoothing.
+```bash
+samsampleX map \
+--template-bam template.bam \
+--region chr1:1000-2000 \
+--out-bed template.bed
+```
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--template-bam FILE` | Input BAM file (required) | - |
+| `--region REGION` | Target region, samtools-style (required) | - |
+| `--out-bed FILE` | Output BED file | `out.bed` |
+| `--collapse INT` | Merge consecutive positions with depth diff <= INT | `0` (per-position) |
+
+### Sampling
+Downsample BAM based on provided BED template(s), using selected metric if multiple BEDs provided.
+```bash
+samsampleX sample \
+    --source-bam high_depth.bam \
+    --template-bed template.bed \
+    --region chr1:1000-2000 \
+    --out-bam sampled.bam
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--source-bam FILE` | Input BAM to sample from (required) | - |
+| `--template-bed FILE` | Template BED file(s) (>=1 required) | - |
+| `--region REGION` | Target region, samtools-style (required) | - |
+| `--out-bam FILE` | Output BAM file | `out.bam` |
+| `--mode MODE` | Combine mode: `min`, `max`, `mean`, `random` | `random` |
+| `--seed INT` | Random seed for reproducibility | `42` |
+| `--no-sort` | Skip sorting and indexing output | false |
 
 ## Testing
-
-Run the full test suite:
-
 ```bash
+# All tests
 make test
-```
 
-Or run specific test types:
-
-```bash
-# Unit tests only (region parsing, depth arrays, metrics)
+# Unit tests
 make test-unit
 
-# Integration tests only (CLI interface)
+# Integration tests
 make test-integration
 ```
 
-### Test Coverage
-
+### Coverage
 | Test File | Description |
 |-----------|-------------|
 | `test_parsing.c` | Region string parsing, combine mode parsing |
@@ -81,106 +86,35 @@ make test-integration
 | `test_metrics.c` | MAE, Wasserstein distance calculations |
 | `integration_tests.sh` | CLI help, subcommand arguments, error handling |
 
-## Usage
-
-### Map: Extract depth template
-
-```bash
-# Extract depth from template BAM to BED file
-samsampleX map --template-bam template.bam --region chr1:1000-2000 --out-bed template.bed
-
-# With collapse (merge consecutive positions with depth difference <= 5)
-samsampleX map --template-bam template.bam --region chr1 --collapse 5 --out-bed template.bed
-```
-
-### Sample: Depth-aware read sampling
-
-```bash
-# Basic usage
-samsampleX sample \
-    --source-bam high_depth.bam \
-    --template-bed template.bed \
-    --region chr1:1000-2000 \
-    --out-bam sampled.bam
-
-# With multiple templates (combines using 'random' by default)
-samsampleX sample \
-    --source-bam source.bam \
-    --template-bed template1.bed \
-    --template-bed template2.bed \
-    --region chr1 \
-    --mode mean \
-    --seed 123 \
-    --out-bam sampled.bam
-
-# Skip sorting/indexing
-samsampleX sample \
-    --source-bam source.bam \
-    --template-bed template.bed \
-    --region chr1 \
-    --no-sort \
-    --out-bam sampled.bam
-```
-
-## Options
-
-### map subcommand
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--template-bam FILE` | Input BAM file (required) | - |
-| `--region REGION` | Target region, samtools-style (required) | - |
-| `--out-bed FILE` | Output BED file | `out.bed` |
-| `--collapse INT` | Merge consecutive positions with depth diff <= INT | `0` (per-base) |
-
-### sample subcommand
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--source-bam FILE` | Input BAM to sample from (required) | - |
-| `--template-bed FILE` | Template BED file(s) (required, repeatable) | - |
-| `--region REGION` | Target region, samtools-style (required) | - |
-| `--out-bam FILE` | Output BAM file | `out.bam` |
-| `--mode MODE` | Combine mode: min, max, mean, random | `random` |
-| `--seed INT` | Random seed for reproducibility | `42` |
-| `--no-sort` | Skip sorting and indexing output | false |
-
-## Algorithm
+## Algorithm rundown
 
 ### Mapping
-
-1. Parse target region from BAM header
-2. Compute per-position depth using read alignments
-3. Write to BED4 format (chrom, start, end, depth)
-4. Optionally collapse consecutive similar depths
+1. Parse target region from source BAM header
+2. Compute per-position depth of coverage for region
+3. Write to BED4 format (`chrom`, `start`, `end`, `depth` columns)
+4. Optionally collapse consecutive similar depths (`--collapse`)
 
 ### Sampling
-
-1. Load template depth array from BED file(s)
-2. Compute source depth array from BAM
-3. Calculate ratio: `ratio[i] = min(1.0, template[i] / source[i])`
+1. Load template depths from BED file(s)
+2. Compute source depths from BAM
+3. Calculate $ratio_{depth}= depth_{template} / depth_{source}$
+    - Sample all reads if $ratio_{depth} > 1.0$
 4. For each read:
-   - Hash read name → fraction in [0, 1)
-   - Compute mean ratio over read's positions
-   - Keep read if `hash_fraction < mean_ratio`
+   - Hash read name to a fraction in [0, 1)
+   - Compute read's mean ratio based on covered positions $\mu(ratio_{depth}) = \sum_{i}^{i+L_{read}} ratio_{depth}(i)/ n$
+   - Select and sample read if $\mu(ratio_{depth}) < ratio_{mean}$
 5. Sort and index output BAM
 6. Report metrics (Wasserstein distance, MAE)
 
 ## Metrics
+| Metric | Significance |
+| - | - |
+| Wasserstein-1 Distance | Difference between depth distributions |
+| MAE | Mean Absolute Error per position |
+| Mean Template Depth | Average depth in the template |
+| Mean Output Depth | Average depth in the output |
 
-After sampling, the tool reports:
-
-- **Mean Template Depth**: Average depth in the template
-- **Mean Output Depth**: Average depth in the output
-- **MAE**: Mean Absolute Error per position
-- **Wasserstein-1 Distance**: Earth Mover's Distance between depth distributions
-
-## License
-
-MIT License
 
 ## Acknowledgments
-
 - Uses [xxHash](https://github.com/Cyan4973/xxHash) for fast hashing (BSD-2 license)
 - Built on [htslib](https://github.com/samtools/htslib) for BAM I/O
-
