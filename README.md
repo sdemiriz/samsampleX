@@ -35,9 +35,9 @@ sudo make install
 Extract depth of coverage from template BAM to BED template with optional smoothing.
 ```bash
 samsampleX map \
---template-bam template.bam \
---region chr1:1000-2000 \
---out-bed template.bed
+    --template-bam template.bam \
+    --region chr1:1000-2000 \
+    --out-bed template.bed
 ```
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -100,15 +100,15 @@ make test-integration
 3. Calculate $ratio_{depth}= depth_{template} / depth_{source}$
     - Sample all reads if $ratio_{depth} > 1.0$
 4. For each read:
-   - Hash read name to a fraction in [0, 1)
-   - Compute read's mean ratio based on covered positions $\mu(ratio_{depth}) = \sum_{i}^{i+L_{read}} ratio_{depth}(i)/ n$
-   - Select and sample read if $\mu(ratio_{depth}) < ratio_{mean}$
+   - Hash read name to a fraction $f_{read}$ in [0, 1)
+   - Compute read's mean ratio based on covered positions $\mu(ratio_{depth}) = \sum_{i}^{i+l_{read}} ratio_{depth}(i) / l_{read}$
+   - Select and sample read if $\mu(ratio_{depth}) < f_{read}$
 5. Sort and index output BAM
 6. Report metrics (Wasserstein distance, MAE)
 
 ## Metrics
 | Metric | Significance |
-| - | - |
+| ------ | ------------ |
 | Wasserstein-1 Distance | Difference between depth distributions |
 | MAE | Mean Absolute Error per position |
 | Mean Template Depth | Average depth in the template |
@@ -117,4 +117,4 @@ make test-integration
 
 ## Acknowledgments
 - Uses [xxHash](https://github.com/Cyan4973/xxHash) for fast hashing (BSD-2 license)
-- Built on [htslib](https://github.com/samtools/htslib) for BAM I/O
+- Built on [htslib](https://github.com/samtools/htslib)
