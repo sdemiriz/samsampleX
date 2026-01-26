@@ -185,13 +185,13 @@ static int parse_plot_args(int argc, char *argv[], plot_args_t *args) {
         {"out-bam",      required_argument, 0, 'o'},
         {"region",       required_argument, 0, 'r'},
         {"out-png",      required_argument, 0, 'p'},
+        {"out-tsv",      required_argument, 0, 'v'},
         {"help",         no_argument,       0, 'h'},
         {0, 0, 0, 0}
     };
     
-    /* Set defaults */
+    /* Set defaults - no output format selected by default */
     memset(args, 0, sizeof(*args));
-    args->out_png = DEFAULT_OUT_PNG;
     
     int opt;
     int option_index = 0;
@@ -199,7 +199,7 @@ static int parse_plot_args(int argc, char *argv[], plot_args_t *args) {
     /* Reset getopt for subcommand parsing */
     optind = 1;
     
-    while ((opt = getopt_long(argc, argv, "s:t:T:o:r:p:h", long_options, &option_index)) != -1) {
+    while ((opt = getopt_long(argc, argv, "s:t:T:o:r:p:v:h", long_options, &option_index)) != -1) {
         switch (opt) {
             case 's':
                 args->source_bam = optarg;
@@ -218,6 +218,9 @@ static int parse_plot_args(int argc, char *argv[], plot_args_t *args) {
                 break;
             case 'p':
                 args->out_png = optarg;
+                break;
+            case 'v':
+                args->out_tsv = optarg;
                 break;
             case 'h':
                 plot_usage();

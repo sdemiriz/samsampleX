@@ -8,9 +8,10 @@
 #include "samsampleX.h"
 
 /*
- * Default output filename
+ * Default output filenames
  */
 #define DEFAULT_OUT_PNG "plot.png"
+#define DEFAULT_OUT_TSV "depths.tsv"
 
 /*
  * Default plot dimensions (pixels)
@@ -27,7 +28,8 @@ typedef struct {
     const char *template_bed;   /* Template BED file (mutually exclusive with template_bam) */
     const char *out_bam;        /* Output BAM file (required) */
     const char *region;         /* Target region (required) */
-    const char *out_png;        /* Output PNG file */
+    const char *out_png;        /* Output PNG file (mutually exclusive with out_tsv) */
+    const char *out_tsv;        /* Output TSV file (mutually exclusive with out_png) */
 } plot_args_t;
 
 /*

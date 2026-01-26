@@ -23,7 +23,7 @@
  */
 void plot_usage(void) {
     fprintf(stderr, "Usage: %s plot [options]\n\n", SAMSAMPLEX_NAME);
-    fprintf(stderr, "Generate a PNG line plot comparing depth of coverage.\n\n");
+    fprintf(stderr, "Compare depth of coverage and output as PNG plot or TSV data.\n\n");
     fprintf(stderr, "Required options:\n");
     fprintf(stderr, "  --source-bam FILE     Source BAM file\n");
     fprintf(stderr, "  --out-bam FILE        Output BAM file (from sampling)\n");
@@ -31,25 +31,31 @@ void plot_usage(void) {
     fprintf(stderr, "Template options (one required):\n");
     fprintf(stderr, "  --template-bam FILE   Template BAM file\n");
     fprintf(stderr, "  --template-bed FILE   Template BED file\n\n");
-    fprintf(stderr, "Output options:\n");
-    fprintf(stderr, "  --out-png FILE        Output PNG file [default: %s]\n\n", DEFAULT_OUT_PNG);
-    fprintf(stderr, "Example:\n");
+    fprintf(stderr, "Output options (one required, mutually exclusive):\n");
+    fprintf(stderr, "  --out-png FILE        Output PNG plot file\n");
+    fprintf(stderr, "  --out-tsv FILE        Output TSV data file\n\n");
+    fprintf(stderr, "Examples:\n");
+    fprintf(stderr, "  # Generate PNG plot\n");
     fprintf(stderr, "  %s plot --source-bam source.bam --template-bam template.bam \\\n", SAMSAMPLEX_NAME);
-    fprintf(stderr, "              --out-bam sampled.bam --region chr1:1000-2000 --out-png plot.png\n");
+    fprintf(stderr, "              --out-bam sampled.bam --region chr1:1000-2000 --out-png plot.png\n\n");
+    fprintf(stderr, "  # Export TSV for custom plotting\n");
+    fprintf(stderr, "  %s plot --source-bam source.bam --template-bed template.bed \\\n", SAMSAMPLEX_NAME);
+    fprintf(stderr, "              --out-bam sampled.bam --region chr1:1000-2000 --out-tsv depths.tsv\n");
 }
 
 /*
  * Create an array of x-coordinates (genomic positions) for plotting.
- * Positions are relative to the start of the region.
+ * Uses 1-based coordinates for display (matching user input).
  */
-static double *create_x_coords(int64_t start, size_t length) {
+static double *create_x_coords(int64_t start_0based, size_t length) {
     double *xs = malloc(length * sizeof(double));
     if (!xs) {
         fprintf(stderr, "Error: Memory allocation failed for x coordinates\n");
         return NULL;
     }
+    /* Use relative positions (0 to length-1) for better numeric stability */
     for (size_t i = 0; i < length; i++) {
-        xs[i] = (double)(start + (int64_t)i);
+        xs[i] = (double)i;
     }
     return xs;
 }
@@ -67,6 +73,33 @@ static double *depths_to_double(int32_t *depths, size_t length) {
         ys[i] = (double)depths[i];
     }
     return ys;
+}
+
+/*
+ * Write depth data to TSV file.
+ * Format: position<TAB>source<TAB>template<TAB>output
+ */
+static int write_tsv(const char *filename, region_t *region,
+                     depth_array_t *source, depth_array_t *template_d, 
+                     depth_array_t *out) {
+    FILE *fp = fopen(filename, "w");
+    if (!fp) {
+        fprintf(stderr, "Error: Cannot open TSV file for writing: %s\n", filename);
+        return 1;
+    }
+    
+    /* Write header */
+    fprintf(fp, "position\tsource_depth\ttemplate_depth\toutput_depth\n");
+    
+    /* Write data rows with 1-based genomic positions */
+    for (size_t i = 0; i < source->length; i++) {
+        int64_t pos = region->start + 1 + (int64_t)i;  /* 1-based */
+        fprintf(fp, "%ld\t%d\t%d\t%d\n", 
+                pos, source->depths[i], template_d->depths[i], out->depths[i]);
+    }
+    
+    fclose(fp);
+    return 0;
 }
 
 /*
@@ -98,6 +131,16 @@ int plot_run(plot_args_t *args) {
     }
     if (args->template_bam && args->template_bed) {
         fprintf(stderr, "Error: --template-bam and --template-bed are mutually exclusive\n");
+        plot_usage();
+        return 1;
+    }
+    if (!args->out_png && !args->out_tsv) {
+        fprintf(stderr, "Error: Either --out-png or --out-tsv is required\n");
+        plot_usage();
+        return 1;
+    }
+    if (args->out_png && args->out_tsv) {
+        fprintf(stderr, "Error: --out-png and --out-tsv are mutually exclusive\n");
         plot_usage();
         return 1;
     }
@@ -162,8 +205,21 @@ int plot_run(plot_args_t *args) {
     }
     
     size_t n_points = source_depth->length;
-    fprintf(stderr, "[plot] Creating plot with %zu data points\n", n_points);
+    fprintf(stderr, "[plot] Processing %zu data points\n", n_points);
     
+    /* Branch based on output format */
+    if (args->out_tsv) {
+        /* TSV output mode */
+        fprintf(stderr, "[plot] Writing TSV to: %s\n", args->out_tsv);
+        ret = write_tsv(args->out_tsv, region, source_depth, template_depth, out_depth);
+        if (ret == 0) {
+            fprintf(stderr, "[plot] Done.\n");
+            fprintf(stderr, "[plot] Columns: position, source_depth, template_depth, output_depth\n");
+        }
+        goto cleanup_out;
+    }
+    
+    /* PNG output mode */
     /* Initialize pbPlots memory arena */
     StartArenaAllocator();
     
@@ -192,7 +248,7 @@ int plot_run(plot_args_t *args) {
     settings->autoPadding = true;
     settings->title = L"Depth of Coverage Comparison";
     settings->titleLength = wcslen(settings->title);
-    settings->xLabel = L"Genomic Position";
+    settings->xLabel = L"Relative Position (bp)";
     settings->xLabelLength = wcslen(settings->xLabel);
     settings->yLabel = L"Depth";
     settings->yLabelLength = wcslen(settings->yLabel);
@@ -260,9 +316,8 @@ int plot_run(plot_args_t *args) {
     /* Convert to PNG and write to file */
     ByteArray *pngData = ConvertToPNG(canvasRef->image);
     
-    const char *out_png = args->out_png ? args->out_png : DEFAULT_OUT_PNG;
-    fprintf(stderr, "[plot] Writing plot to: %s\n", out_png);
-    WriteToFile(pngData, (char *)out_png);
+    fprintf(stderr, "[plot] Writing PNG to: %s\n", args->out_png);
+    WriteToFile(pngData, (char *)args->out_png);
     
     fprintf(stderr, "[plot] Done.\n");
     fprintf(stderr, "[plot] Legend: Blue=Source, Green=Template, Red=Output\n");

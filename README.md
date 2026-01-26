@@ -68,14 +68,23 @@ samsampleX sample \
 | `--no-sort` | Skip sorting and indexing output | false |
 
 ### Plotting
-Generate a PNG line plot comparing depth of coverage between source, template, and output BAM files.
+Compare depth of coverage between source, template, and output BAM files. Output as PNG plot or TSV data.
 ```bash
+# Generate PNG plot
 samsampleX plot \
     --source-bam high_depth.bam \
     --template-bam template.bam \
     --out-bam sampled.bam \
     --region chr1:1000-2000 \
     --out-png coverage_plot.png
+
+# Export TSV for custom plotting (e.g., with matplotlib)
+samsampleX plot \
+    --source-bam high_depth.bam \
+    --template-bed template.bed \
+    --out-bam sampled.bam \
+    --region chr1:1000-2000 \
+    --out-tsv depths.tsv
 ```
 
 | Option | Description | Default |
@@ -85,12 +94,15 @@ samsampleX plot \
 | `--template-bed FILE` | Template BED file (mutually exclusive with --template-bam) | - |
 | `--out-bam FILE` | Output BAM file from sampling (required) | - |
 | `--region REGION` | Target region, samtools-style (required) | - |
-| `--out-png FILE` | Output PNG file | `plot.png` |
+| `--out-png FILE` | Output PNG plot (mutually exclusive with --out-tsv) | - |
+| `--out-tsv FILE` | Output TSV data (mutually exclusive with --out-png) | - |
 
-The plot displays three line series:
+**PNG output** displays three line series:
 - **Blue**: Source BAM depth
 - **Green**: Template depth (from BAM or BED)
 - **Red**: Output BAM depth
+
+**TSV output** columns: `position`, `source_depth`, `template_depth`, `output_depth`
 
 ## Testing
 ```bash

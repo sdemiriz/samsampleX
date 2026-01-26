@@ -1,6 +1,9 @@
 
 ### CONFIGURATION
 SEED = 42
+N_REPLICATES = 10  # Number of times to run each benchmark
+REPLICATES = list(range(1, N_REPLICATES + 1))
+SEEDS = [SEED + REPLICATE for REPLICATE in REPLICATES]
 
 CHR = "chr21"
 START = 1
@@ -10,19 +13,19 @@ END = 46709982
 # START = 29941260
 # END = 29949572
 
-INPUT_URL = "wget https://ftp.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/AshkenazimTrio/HG002_NA24385_son/NIST_HiSeq_HG002_Homogeneity-10953946/NHGRI_Illumina300X_AJtrio_novoalign_bams/HG002.GRCh38.300x.bam"
+INPUT_URL = "https://ftp.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/AshkenazimTrio/HG002_NA24385_son/NIST_HiSeq_HG002_Homogeneity-10953946/NHGRI_Illumina300X_AJtrio_novoalign_bams/HG002.GRCh38.300x.bam"
 INPUT_PREFIX = "HG002.GRCh38.300x"
-INPUT_BAM = f"../../{INPUT_PREFIX}.bam"
+INPUT_BAM = f"../../subsample-reads/{INPUT_PREFIX}.bam"
 
 TARGET_BAM = f"{INPUT_PREFIX}-{CHR}-{START}-{END}.bam"
 
 TEMPLATE_URL = "ftp://ftp.sra.ebi.ac.uk/vol1/run/ERR324/ERR3240157/HG00157.final.cram"
 TEMPLATE_PREFIX = "HG00157"
-TEMPLATE_BAM = f"../../{TEMPLATE_PREFIX}.bam"
+TEMPLATE_BAM = f"../../subsample-reads/{TEMPLATE_PREFIX}.bam"
 TEMPLATE = f"{TEMPLATE_PREFIX}-{CHR}-{START}-{END}.bed"
 
 # Path to the C samsampleX binary (built from parent directory)
-SAMSAMPLEX_C = "../samsampleX"
+SAMSAMPLEX = "../samsampleX"
 
 ### RESOURCES
 CPU = 4
@@ -33,14 +36,15 @@ TIME = "24:00:00"
 ### RULES
 rule all:
     input:
-        "results.tsv"
+        "results.tsv",
+        "results_summary.tsv"
 
-rule build_samsampleX_c:
+rule build_samsampleX:
     """
-    Build the C version of samsampleX if not already built
+    Build samsampleX if not already built
     """
     output:
-        binary=SAMSAMPLEX_C,
+        binary=SAMSAMPLEX,
     shell:
         """
         cd .. && make
@@ -100,7 +104,6 @@ rule preprocess_input_bam:
         samtools index {output.bam}
         """
 
-
 rule GATK_HighAccuracy:
     """
     Downsample the input BAM file using GATK HighAccuracy
@@ -109,11 +112,12 @@ rule GATK_HighAccuracy:
         bam=TARGET_BAM,
         index=TARGET_BAM + ".bai",
     params:
-        seed=SEED,
         coefficient=0.1,
+    wildcard_constraints:
+        seed="\d+",
     output:
-        bam=f"gatk-high-accuracy.bam",
-        log=f"gatk-high-accuracy.log",
+        bam="gatk-high-accuracy.seed{seed}.bam",
+        log="gatk-high-accuracy.seed{seed}.log",
     resources:
         cpus=CPU,
         mem_mb=MEM_MB,
@@ -124,7 +128,7 @@ rule GATK_HighAccuracy:
         gatk --java-options "-Xmx16g" DownsampleSam \
         -S HighAccuracy \
         -P {params.coefficient} \
-        -R {params.seed} \
+        -R {wildcards.seed} \
         -I {input.bam} \
         -O {output.bam}
         """
@@ -137,11 +141,12 @@ rule GATK_ConstantMemory:
         bam=TARGET_BAM,
         index=TARGET_BAM + ".bai",
     params:
-        seed=SEED,
         coefficient=0.1,
+    wildcard_constraints:
+        seed="\d+",
     output:
-        bam=f"gatk-constant-memory.bam",
-        log=f"gatk-constant-memory.log",
+        bam="gatk-constant-memory.seed{seed}.bam",
+        log="gatk-constant-memory.seed{seed}.log",
     resources:
         cpus=CPU,
         mem_mb=MEM_MB,
@@ -152,7 +157,7 @@ rule GATK_ConstantMemory:
         gatk --java-options "-Xmx16g" DownsampleSam \
         -S ConstantMemory \
         -P {params.coefficient} \
-        -R {params.seed} \
+        -R {wildcards.seed} \
         -I {input.bam} \
         -O {output.bam}
         """
@@ -165,11 +170,12 @@ rule GATK_Chained:
         bam=TARGET_BAM,
         index=TARGET_BAM + ".bai",
     params:
-        seed=SEED,
         coefficient=0.1,
+    wildcard_constraints:
+        seed="\d+",
     output:
-        bam=f"gatk-chained.bam",
-        log=f"gatk-chained.log",
+        bam="gatk-chained.seed{seed}.bam",
+        log="gatk-chained.seed{seed}.log",
     resources:
         cpus=CPU,
         mem_mb=MEM_MB,
@@ -180,7 +186,7 @@ rule GATK_Chained:
         gatk --java-options "-Xmx16g" DownsampleSam \
         -S Chained \
         -P {params.coefficient} \
-        -R {params.seed} \
+        -R {wildcards.seed} \
         -I {input.bam} \
         -O {output.bam}
         """
@@ -193,11 +199,12 @@ rule samtools:
         bam=TARGET_BAM,
         index=TARGET_BAM + ".bai",
     params:
-        seed=SEED,
         coefficient=".1",
+    wildcard_constraints:
+        seed="\d+",
     output:
-        bam="samtools.bam",
-        log="samtools.log",
+        bam="samtools.seed{seed}.bam",
+        log="samtools.seed{seed}.log",
     resources:
         cpus=CPU,
         mem_mb=MEM_MB,
@@ -207,7 +214,7 @@ rule samtools:
         env time -o {output.log} -v \
         samtools view \
         {input.bam} \
-        -s {params.seed}{params.coefficient} \
+        -s {wildcards.seed}{params.coefficient} \
         -b -o {output.bam}
         """
 
@@ -219,11 +226,12 @@ rule sambamba:
         bam=TARGET_BAM,
         index=TARGET_BAM + ".bai",
     params:
-        seed=SEED,
         coefficient=".1",
+    wildcard_constraints:
+        seed="\d+",
     output:
-        bam="sambamba.bam",
-        log="sambamba.log",
+        bam="sambamba.seed{seed}.bam",
+        log="sambamba.seed{seed}.log",
     resources:
         cpus=CPU,
         mem_mb=MEM_MB,
@@ -233,18 +241,18 @@ rule sambamba:
         env time -o {output.log} -v \
         sambamba view \
         {input.bam} \
-        -s {params.seed}{params.coefficient} \
+        -s {wildcards.seed}{params.coefficient} \
         -o {output.bam}
         """
 
-rule samsampleX_c_map:
+rule samsampleX_map:
     """
-    Map the template BAM file using samsampleX (C version)
+    Map the template BAM file using samsampleX
     """
     input:
         bam=TARGET_BAM,
         index=TARGET_BAM + ".bai",
-        binary=SAMSAMPLEX_C,
+        binary=SAMSAMPLEX,
     params:
         chr=CHR,
         start=START,
@@ -252,7 +260,7 @@ rule samsampleX_c_map:
         collapse=1,
     output:
         bed=TEMPLATE,
-        log="samsampleX-c-map.log",
+        log="samsampleX-map.log",
     resources:
         cpus=CPU,
         mem_mb=MEM_MB,
@@ -267,25 +275,26 @@ rule samsampleX_c_map:
         --collapse {params.collapse}
         """
 
-rule samsampleX_c_sampling:
+rule samsampleX_sampling:
     """
-    Downsample the input BAM file using samsampleX (C version)
+    Downsample the input BAM file using samsampleX
     Fair comparison: no sorting/indexing, no metrics calculation
     """
     input:
         bam=TARGET_BAM,
         index=TARGET_BAM + ".bai",
         template=TEMPLATE,
-        binary=SAMSAMPLEX_C,
+        binary=SAMSAMPLEX,
     params:
-        seed=SEED,
         mode="mean",
         chr=CHR,
         start=START,
         end=END,
+    wildcard_constraints:
+        seed="\d+",
     output:
-        bam="samsampleX-c-sample.bam",
-        log="samsampleX-c-sample.log",
+        bam="samsampleX-sample.seed{seed}.bam",
+        log="samsampleX-sample.seed{seed}.log",
     resources:
         cpus=CPU,
         mem_mb=MEM_MB,
@@ -300,19 +309,22 @@ rule samsampleX_c_sampling:
         --no-sort \
         --no-metrics \
         --region {params.chr}:{params.start}-{params.end} \
-        --seed {params.seed} \
+        --seed {wildcards.seed} \
         --mode {params.mode}
         """
 
 rule results:
+    """
+    Collect all individual replicate results into a single TSV
+    """
     input:
-        gatk_high_accuracy="gatk-high-accuracy.log",
-        gatk_constant_memory="gatk-constant-memory.log",
-        gatk_chained="gatk-chained.log",
-        samtools="samtools.log",
-        sambamba="sambamba.log",
-        samsampleX_c_map="samsampleX-c-map.log",
-        samsampleX_c_sample="samsampleX-c-sample.log",
+        gatk_high_accuracy=expand("gatk-high-accuracy.seed{seed}.log", seed=SEEDS),
+        gatk_constant_memory=expand("gatk-constant-memory.seed{seed}.log", seed=SEEDS),
+        gatk_chained=expand("gatk-chained.seed{seed}.log", seed=SEEDS),
+        samtools=expand("samtools.seed{seed}.log", seed=SEEDS),
+        sambamba=expand("sambamba.seed{seed}.log", seed=SEEDS),
+        samsampleX_map="samsampleX-map.log",
+        samsampleX_sample=expand("samsampleX-sample.seed{seed}.log", seed=SEEDS),
     output:
         results="results.tsv"
     resources:
@@ -321,6 +333,7 @@ rule results:
         time=TIME,
     run:
         import os
+        import re
         
         def parse_log(filepath):
             data = {}
@@ -332,19 +345,115 @@ rule results:
                         data[key.strip()] = val.strip()
             return data
         
-        results = {}
+        results = []
         headers = []
         
-        for name, path in input._allitems():
-            data = parse_log(path)
-            results[name] = data
-            if not headers:
-                headers = list(data.keys())
+        # Parse each tool's replicate logs
+        tool_patterns = [
+            ("gatk_high_accuracy", "gatk-high-accuracy"),
+            ("gatk_constant_memory", "gatk-constant-memory"),
+            ("gatk_chained", "gatk-chained"),
+            ("samtools", "samtools"),
+            ("sambamba", "sambamba"),
+            ("samsampleX_sample", "samsampleX-sample"),
+        ]
+        
+        for tool_name, file_prefix in tool_patterns:
+            for seed in SEEDS:
+                path = f"{file_prefix}.seed{seed}.log"
+                data = parse_log(path)
+                data["Tool"] = tool_name
+                data["Seed"] = str(seed)
+                results.append(data)
+                if not headers:
+                    headers = [k for k in data.keys() if k not in ["Tool", "Seed"]]
+        
+        # Add samsampleX_map (single run, no replicates)
+        map_data = parse_log("samsampleX-map.log")
+        map_data["Tool"] = "samsampleX_map"
+        map_data["Seed"] = "NA"
+        results.append(map_data)
         
         with open(output.results, 'w') as out:
-            out.write('\t'.join(['Tool'] + headers) + '\n')
-            for tool, data in results.items():
-                row = [tool] + [data.get(h, '') for h in headers]
+            out.write('\t'.join(['Tool', 'Seed'] + headers) + '\n')
+            for data in results:
+                row = [data.get("Tool", ""), data.get("Seed", "")] + [data.get(h, '') for h in headers]
                 out.write('\t'.join(row) + '\n')
+
+
+rule results_summary:
+    """
+    Compute summary statistics (mean, std, min, max) across replicates for each tool
+    """
+    input:
+        results="results.tsv"
+    output:
+        summary="results_summary.tsv"
+    resources:
+        cpus=1,
+        mem_mb=1024,
+        time="01:00:00",
+    run:
+        import statistics
+        import re
+        
+        def parse_numeric(val):
+            """Extract numeric value from string (handles units like '123 kB')"""
+            if not val:
+                return None
+            # Try to extract first numeric part
+            match = re.match(r'^([\d.]+)', val.replace(',', ''))
+            if match:
+                try:
+                    return float(match.group(1))
+                except ValueError:
+                    return None
+            return None
+        
+        # Read results
+        with open(input.results) as f:
+            header = f.readline().strip().split('\t')
+            rows = [line.strip().split('\t') for line in f if line.strip()]
+        
+        # Group by tool
+        tool_data = {}
+        for row in rows:
+            row_dict = dict(zip(header, row))
+            tool = row_dict['Tool']
+            if tool not in tool_data:
+                tool_data[tool] = []
+            tool_data[tool].append(row_dict)
+        
+        # Compute statistics for numeric columns
+        numeric_cols = [h for h in header if h not in ['Tool', 'Seed']]
+        
+        summary_rows = []
+        for tool, reps in tool_data.items():
+            summary = {'Tool': tool, 'N_replicates': len(reps)}
+            
+            for col in numeric_cols:
+                values = [parse_numeric(r.get(col, '')) for r in reps]
+                values = [v for v in values if v is not None]
+                
+                if values:
+                    summary[f'{col}_mean'] = f"{statistics.mean(values):.4f}"
+                    summary[f'{col}_std'] = f"{statistics.stdev(values):.4f}" if len(values) > 1 else "NA"
+                    summary[f'{col}_min'] = f"{min(values):.4f}"
+                    summary[f'{col}_max'] = f"{max(values):.4f}"
+                else:
+                    summary[f'{col}_mean'] = "NA"
+                    summary[f'{col}_std'] = "NA"
+                    summary[f'{col}_min'] = "NA"
+                    summary[f'{col}_max'] = "NA"
+            
+            summary_rows.append(summary)
+        
+        # Write summary
+        if summary_rows:
+            summary_headers = list(summary_rows[0].keys())
+            with open(output.summary, 'w') as out:
+                out.write('\t'.join(summary_headers) + '\n')
+                for row in summary_rows:
+                    out.write('\t'.join(str(row.get(h, '')) for h in summary_headers) + '\n')
 
 

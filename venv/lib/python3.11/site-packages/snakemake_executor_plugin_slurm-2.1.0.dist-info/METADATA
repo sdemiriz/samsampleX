@@ -1,0 +1,32 @@
+Metadata-Version: 2.4
+Name: snakemake-executor-plugin-slurm
+Version: 2.1.0
+Summary: A Snakemake executor plugin for submitting jobs to a SLURM cluster.
+License: MIT
+License-File: LICENSE
+Keywords: snakemake,plugin,executor,cluster,slurm
+Author: Christian Meesters
+Author-email: meesters@uni-mainz.de
+Requires-Python: >=3.11,<4.0
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Requires-Dist: numpy (>=1.26.4,<3)
+Requires-Dist: pandas (>=2.2.3,<3.0.0)
+Requires-Dist: snakemake-executor-plugin-slurm-jobstep (>=0.4.0,<0.5.0)
+Requires-Dist: snakemake-interface-common (>=1.21.0,<2.0.0)
+Requires-Dist: snakemake-interface-executor-plugins (>=9.3.9,<10.0.0)
+Requires-Dist: throttler (>=1.2.2,<2.0.0)
+Project-URL: Documentation, https://snakemake.github.io/snakemake-plugin-catalog/plugins/executor/slurm.html
+Project-URL: Repository, https://github.com/snakemake/snakemake-executor-plugin-slurm
+Description-Content-Type: text/markdown
+
+# Snakemake executor plugin: slurm
+
+[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/snakemake/snakemake-executor-plugin-slurm)
+
+For documentation, see the [Snakemake plugin catalog](https://snakemake.github.io/snakemake-plugin-catalog/plugins/executor/slurm.html).
+

@@ -1,0 +1,26 @@
+Metadata-Version: 2.4
+Name: snakemake-executor-plugin-slurm-jobstep
+Version: 0.4.0
+Summary: A Snakemake executor plugin for running srun jobs inside of SLURM jobs (meant for internal use by snakemake-executor-plugin-slurm)
+License: MIT
+License-File: LICENSE
+Keywords: snakemake,plugin,executor,cluster,slurm
+Author: Christian Meesters
+Author-email: meesters@uni-mainz.de
+Requires-Python: >=3.11,<4.0
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Requires-Dist: snakemake-interface-common (>=1.17.4,<2.0.0)
+Requires-Dist: snakemake-interface-executor-plugins (>=9.3.2,<10.0.0)
+Project-URL: Documentation, https://snakemake.github.io/snakemake-plugin-catalog/plugins/executor/slurm-jobstep.html
+Project-URL: Repository, https://github.com/snakemake/snakemake-executor-plugin-slurm-jobstep
+Description-Content-Type: text/markdown
+
+# snakemake-executor-plugin-slurm
+
+A Snakemake executor plugin for running srun jobs inside of SLURM jobs (meant for
+internal use by snakemake-executor-plugin-slurm).
