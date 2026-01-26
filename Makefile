@@ -1,4 +1,4 @@
-# samsampleX-c Makefile
+# samsampleX Makefile
 # Requires: htslib (install via apt, brew, or from source)
 
 CC ?= gcc
@@ -17,9 +17,12 @@ BUILD_DIR = build
 SRCS = $(SRC_DIR)/main.c \
        $(SRC_DIR)/map.c \
        $(SRC_DIR)/sample.c \
+       $(SRC_DIR)/plot.c \
        $(SRC_DIR)/bed.c \
        $(SRC_DIR)/depth.c \
-       $(SRC_DIR)/metrics.c
+       $(SRC_DIR)/metrics.c \
+       $(SRC_DIR)/pbPlots.c \
+       $(SRC_DIR)/supportLib.c
 
 # Object files
 OBJS = $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
@@ -44,7 +47,7 @@ ifeq ($(HTSLIB_LIBS),)
         HTSLIB_CFLAGS = -I$(HOME)/local/include
         HTSLIB_LIBS = -L$(HOME)/local/lib -lhts
     else
-        $(error htslib not found. Install with: apt install libhts-dev, brew install htslib, or build from source)
+        $(error htslib not found, please install before continuing.)
     endif
 endif
 
@@ -137,9 +140,10 @@ test: test-unit test-integration
 .PHONY: all check-htslib install uninstall clean test test-unit test-integration
 
 # Dependencies (auto-generated would be better, but keep it simple)
-$(BUILD_DIR)/main.o: $(SRC_DIR)/main.c $(INC_DIR)/samsampleX.h $(SRC_DIR)/map.h $(SRC_DIR)/sample.h
+$(BUILD_DIR)/main.o: $(SRC_DIR)/main.c $(INC_DIR)/samsampleX.h $(SRC_DIR)/map.h $(SRC_DIR)/sample.h $(SRC_DIR)/plot.h
 $(BUILD_DIR)/map.o: $(SRC_DIR)/map.c $(SRC_DIR)/map.h $(INC_DIR)/samsampleX.h $(SRC_DIR)/bed.h $(SRC_DIR)/depth.h
 $(BUILD_DIR)/sample.o: $(SRC_DIR)/sample.c $(SRC_DIR)/sample.h $(INC_DIR)/samsampleX.h $(SRC_DIR)/bed.h $(SRC_DIR)/depth.h $(SRC_DIR)/metrics.h
+$(BUILD_DIR)/plot.o: $(SRC_DIR)/plot.c $(SRC_DIR)/plot.h $(INC_DIR)/samsampleX.h $(SRC_DIR)/bed.h $(SRC_DIR)/depth.h $(SRC_DIR)/pbPlots.h $(SRC_DIR)/supportLib.h
 $(BUILD_DIR)/bed.o: $(SRC_DIR)/bed.c $(SRC_DIR)/bed.h $(INC_DIR)/samsampleX.h
 $(BUILD_DIR)/depth.o: $(SRC_DIR)/depth.c $(SRC_DIR)/depth.h $(INC_DIR)/samsampleX.h
 $(BUILD_DIR)/metrics.o: $(SRC_DIR)/metrics.c $(SRC_DIR)/metrics.h $(INC_DIR)/samsampleX.h

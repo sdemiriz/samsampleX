@@ -5,6 +5,7 @@
  * It supports multiple subcommands:
  *   - map: Extract depth from BAM to BED template
  *   - sample: Sample reads to match template depth distribution
+ *   - plot: Generate depth comparison plots
  */
 
 #include <stdio.h>
@@ -15,6 +16,7 @@
 #include "samsampleX.h"
 #include "map.h"
 #include "sample.h"
+#include "plot.h"
 #include "depth.h"
 
 /*
@@ -25,7 +27,8 @@ static void print_usage(void) {
     fprintf(stderr, "Usage: %s <command> [options]\n\n", SAMSAMPLEX_NAME);
     fprintf(stderr, "Commands:\n");
     fprintf(stderr, "  map      Extract depth of coverage from BAM to BED template\n");
-    fprintf(stderr, "  sample   Sample reads from BAM to match template depth distribution\n\n");
+    fprintf(stderr, "  sample   Sample reads from BAM to match template depth distribution\n");
+    fprintf(stderr, "  plot     Generate depth comparison plot (PNG)\n\n");
     fprintf(stderr, "Use '%s <command> --help' for command-specific help.\n", SAMSAMPLEX_NAME);
 }
 
@@ -172,6 +175,63 @@ static int parse_sample_args(int argc, char *argv[], sample_args_t *args) {
 }
 
 /*
+ * Parse arguments for the 'plot' subcommand.
+ */
+static int parse_plot_args(int argc, char *argv[], plot_args_t *args) {
+    static struct option long_options[] = {
+        {"source-bam",   required_argument, 0, 's'},
+        {"template-bam", required_argument, 0, 't'},
+        {"template-bed", required_argument, 0, 'T'},
+        {"out-bam",      required_argument, 0, 'o'},
+        {"region",       required_argument, 0, 'r'},
+        {"out-png",      required_argument, 0, 'p'},
+        {"help",         no_argument,       0, 'h'},
+        {0, 0, 0, 0}
+    };
+    
+    /* Set defaults */
+    memset(args, 0, sizeof(*args));
+    args->out_png = DEFAULT_OUT_PNG;
+    
+    int opt;
+    int option_index = 0;
+    
+    /* Reset getopt for subcommand parsing */
+    optind = 1;
+    
+    while ((opt = getopt_long(argc, argv, "s:t:T:o:r:p:h", long_options, &option_index)) != -1) {
+        switch (opt) {
+            case 's':
+                args->source_bam = optarg;
+                break;
+            case 't':
+                args->template_bam = optarg;
+                break;
+            case 'T':
+                args->template_bed = optarg;
+                break;
+            case 'o':
+                args->out_bam = optarg;
+                break;
+            case 'r':
+                args->region = optarg;
+                break;
+            case 'p':
+                args->out_png = optarg;
+                break;
+            case 'h':
+                plot_usage();
+                exit(0);
+            default:
+                plot_usage();
+                return -1;
+        }
+    }
+    
+    return 0;
+}
+
+/*
  * Main entry point.
  */
 int main(int argc, char *argv[]) {
@@ -208,6 +268,13 @@ int main(int argc, char *argv[]) {
             return 1;
         }
         return sample_run(&args);
+    }
+    else if (strcmp(command, "plot") == 0) {
+        plot_args_t args;
+        if (parse_plot_args(argc - 1, argv + 1, &args) != 0) {
+            return 1;
+        }
+        return plot_run(&args);
     }
     else {
         fprintf(stderr, "Error: Unknown command '%s'\n\n", command);

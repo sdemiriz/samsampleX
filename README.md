@@ -8,6 +8,7 @@ A C-based tool for customizable BAM file downsampling. Sample reads from a sourc
 - Calculation of quality metrics:
     - Wasserstein distance: distribution-wide downsampling performance.
     - MAE: per-base downsampling performance.
+- Depth comparison plots (PNG) for visualizing sampling results.
 
 ## Installation
 ### Requirements
@@ -66,6 +67,31 @@ samsampleX sample \
 | `--seed INT` | Random seed for reproducibility | `42` |
 | `--no-sort` | Skip sorting and indexing output | false |
 
+### Plotting
+Generate a PNG line plot comparing depth of coverage between source, template, and output BAM files.
+```bash
+samsampleX plot \
+    --source-bam high_depth.bam \
+    --template-bam template.bam \
+    --out-bam sampled.bam \
+    --region chr1:1000-2000 \
+    --out-png coverage_plot.png
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--source-bam FILE` | Source BAM file (required) | - |
+| `--template-bam FILE` | Template BAM file (mutually exclusive with --template-bed) | - |
+| `--template-bed FILE` | Template BED file (mutually exclusive with --template-bam) | - |
+| `--out-bam FILE` | Output BAM file from sampling (required) | - |
+| `--region REGION` | Target region, samtools-style (required) | - |
+| `--out-png FILE` | Output PNG file | `plot.png` |
+
+The plot displays three line series:
+- **Blue**: Source BAM depth
+- **Green**: Template depth (from BAM or BED)
+- **Red**: Output BAM depth
+
 ## Testing
 ```bash
 # All tests
@@ -86,6 +112,16 @@ make test-integration
 | `test_metrics.c` | MAE, Wasserstein distance calculations |
 | `integration_tests.sh` | CLI help, subcommand arguments, error handling |
 
+## Benchmarking
+Benchmarking is carried out by a `snakemake` pipeline in the `benchmarks` directory, and is expected to be installed. The GNU `time` utility is used for gathering the runtime metrics for benchmarking. (Note: This is different from the typical `time` command.)
+
+`samsampleX` is compared in performance against `GATK`, `samtools` and `sambamba`, all of which should be installed and available for benchmarking. Be advised that these three tools downsample uniformly against `samsampleX`'s depth-aware method, thus the comparison in performance is not entirely fair due to the difference in functionality.
+
+Configure the benchmarking details at the top of the `Snakefile` to set the genomic region and the count for each tool to be run. Also specify the hardware requirements in terms of cores and memory allocated to each tool. Finally, execute `snakemake` workflow.
+
+The output files `results.tsv` and `results-summary.tsv` should contain the details of the run. For clarity, both `samsampleX` steps `map` and `sample` are benchmarked separately.
+
+`GATK`, `samtools` and `sambamba` 
 ## Algorithm rundown
 
 ### Mapping
@@ -117,4 +153,5 @@ make test-integration
 
 ## Acknowledgments
 - Uses [xxHash](https://github.com/Cyan4973/xxHash) for fast hashing (BSD-2 license)
+- Uses [pbPlots](https://github.com/InductiveComputerScience/pbPlots) for PNG plot generation
 - Built on [htslib](https://github.com/samtools/htslib)
