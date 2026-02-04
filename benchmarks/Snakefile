@@ -130,15 +130,15 @@ rule GATK_HighAccuracy:
     wildcard_constraints:
         seed="\d+",
     output:
-        bam="gatk-high-accuracy.seed{seed}.bam",
-        log="gatk-high-accuracy.seed{seed}.log",
+        bam="gatk-high-accuracy-seed{seed}-bam",
+    benchmark:
+        "benchmarks/gatk-high-accuracy-seed{seed}-tsv"
     resources:
         cpus=CPU,
         mem_mb=MEM_MB,
         time=TIME,
     shell:
         """
-        env time -o {output.log} -v \
         gatk --java-options "-Xmx16g" DownsampleSam \
         -S HighAccuracy \
         -P {params.coefficient} \
@@ -159,15 +159,15 @@ rule GATK_ConstantMemory:
     wildcard_constraints:
         seed="\d+",
     output:
-        bam="gatk-constant-memory.seed{seed}.bam",
-        log="gatk-constant-memory.seed{seed}.log",
+        bam="gatk-constant-memory-seed{seed}-bam",
+    benchmark:
+        "benchmarks/gatk-constant-memory-seed{seed}-tsv"
     resources:
         cpus=CPU,
         mem_mb=MEM_MB,
         time=TIME,
     shell:
         """
-        env time -o {output.log} -v \
         gatk --java-options "-Xmx16g" DownsampleSam \
         -S ConstantMemory \
         -P {params.coefficient} \
@@ -188,15 +188,15 @@ rule GATK_Chained:
     wildcard_constraints:
         seed="\d+",
     output:
-        bam="gatk-chained.seed{seed}.bam",
-        log="gatk-chained.seed{seed}.log",
+        bam="gatk-chained-seed{seed}-bam",
+    benchmark:
+        "benchmarks/gatk-chained-seed{seed}-tsv"
     resources:
         cpus=CPU,
         mem_mb=MEM_MB,
         time=TIME,
     shell:
         """
-        env time -o {output.log} -v \
         gatk --java-options "-Xmx16g" DownsampleSam \
         -S Chained \
         -P {params.coefficient} \
@@ -217,15 +217,15 @@ rule samtools:
     wildcard_constraints:
         seed="\d+",
     output:
-        bam="samtools.seed{seed}.bam",
-        log="samtools.seed{seed}.log",
+        bam="samtools-seed{seed}-bam",
+    benchmark:
+        "benchmarks/samtools-seed{seed}-tsv"
     resources:
         cpus=CPU,
         mem_mb=MEM_MB,
         time=TIME,
     shell:
         """
-        env time -o {output.log} -v \
         samtools view \
         {input.bam} \
         -s {wildcards.seed}{params.coefficient} \
@@ -244,15 +244,15 @@ rule sambamba:
     wildcard_constraints:
         seed="\d+",
     output:
-        bam="sambamba.seed{seed}.bam",
-        log="sambamba.seed{seed}.log",
+        bam="sambamba-seed{seed}-bam",
+    benchmark:
+        "benchmarks/sambamba-seed{seed}-tsv"
     resources:
         cpus=CPU,
         mem_mb=MEM_MB,
         time=TIME,  
     shell:
         """
-        env time -o {output.log} -v \
         sambamba view \
         {input.bam} \
         -f bam \
@@ -275,18 +275,18 @@ rule samsampleX_map:
         end=END,
     output:
         bed=TEMPLATE,
-        log="samsampleX-map.log",
+    benchmark:
+        "benchmarks/samsampleX-map.tsv"
     resources:
         cpus=CPU,
         mem_mb=MEM_MB,
         time=TIME,
     shell:
         """
-        env time -o {output.log} -v \
         {input.binary} map \
         --template-bam {TEMPLATE_BAM} \
         --region {params.chr}:{params.start}-{params.end} \
-        --out-bed {output.bed} \
+        --out-bed {output.bed}
         """
 
 rule samsampleX_sampling:
@@ -307,15 +307,15 @@ rule samsampleX_sampling:
     wildcard_constraints:
         seed="\d+",
     output:
-        bam="samsampleX-sample.seed{seed}.bam",
-        log="samsampleX-sample.seed{seed}.log",
+        bam="samsampleX-sample-seed{seed}-bam",
+    benchmark:
+        "benchmarks/samsampleX-sample-seed{seed}-tsv"
     resources:
         cpus=CPU,
         mem_mb=MEM_MB,
         time=TIME,
     shell:
         """
-        env time -o {output.log} -v \
         {input.binary} sample \
         --source-bam {input.bam} \
         --template-bed {input.template} {input.template} \
@@ -329,16 +329,17 @@ rule samsampleX_sampling:
 
 rule results:
     """
-    Collect all individual replicate results into a single TSV
+    Collect all individual replicate benchmark results into a single TSV.
+    Reads Snakemake benchmark TSV files (standardized format).
     """
     input:
-        gatk_high_accuracy=expand("gatk-high-accuracy.seed{seed}.log", seed=SEEDS),
-        gatk_constant_memory=expand("gatk-constant-memory.seed{seed}.log", seed=SEEDS),
-        gatk_chained=expand("gatk-chained.seed{seed}.log", seed=SEEDS),
-        samtools=expand("samtools.seed{seed}.log", seed=SEEDS),
-        sambamba=expand("sambamba.seed{seed}.log", seed=SEEDS),
-        samsampleX_map="samsampleX-map.log",
-        samsampleX_sample=expand("samsampleX-sample.seed{seed}.log", seed=SEEDS),
+        gatk_high_accuracy=expand("benchmarks/gatk-high-accuracy-seed{seed}-tsv", seed=SEEDS),
+        gatk_constant_memory=expand("benchmarks/gatk-constant-memory-seed{seed}-tsv", seed=SEEDS),
+        gatk_chained=expand("benchmarks/gatk-chained-seed{seed}-tsv", seed=SEEDS),
+        samtools=expand("benchmarks/samtools-seed{seed}-tsv", seed=SEEDS),
+        sambamba=expand("benchmarks/sambamba-seed{seed}-tsv", seed=SEEDS),
+        samsampleX_map="benchmarks/samsampleX-map.tsv",
+        samsampleX_sample=expand("benchmarks/samsampleX-sample-seed{seed}-tsv", seed=SEEDS),
     output:
         results="results.tsv"
     resources:
@@ -346,58 +347,53 @@ rule results:
         mem_mb=MEM_MB,
         time=TIME,
     run:
-        import os
-        import re
-        
-        def parse_log(filepath):
-            data = {}
+        def parse_benchmark(filepath):
+            """Parse Snakemake benchmark TSV file (header + single data row)"""
             with open(filepath) as f:
-                for line in f:
-                    line = line.strip()
-                    if ': ' in line:
-                        key, val = line.split(': ', 1)
-                        data[key.strip()] = val.strip()
-            return data
+                header = f.readline().strip().split('\t')
+                values = f.readline().strip().split('\t')
+            return dict(zip(header, values))
         
         results = []
-        headers = []
         
-        # Parse each tool's replicate logs
+        # Tool name mapping for output
         tool_patterns = [
-            ("gatk_high_accuracy", "gatk-high-accuracy"),
-            ("gatk_constant_memory", "gatk-constant-memory"),
-            ("gatk_chained", "gatk-chained"),
+            ("gatk-high-accuracy", "gatk-high-accuracy"),
+            ("gatk-constant-memory", "gatk-constant-memory"),
+            ("gatk-chained", "gatk-chained"),
             ("samtools", "samtools"),
             ("sambamba", "sambamba"),
-            ("samsampleX_sample", "samsampleX-sample"),
+            ("samsampleX-sample", "samsampleX-sample"),
         ]
         
         for tool_name, file_prefix in tool_patterns:
             for seed in SEEDS:
-                path = f"{file_prefix}.seed{seed}.log"
-                data = parse_log(path)
-                data["Tool"] = tool_name
-                data["Seed"] = str(seed)
+                path = f"benchmarks/{file_prefix}-seed{seed}-tsv"
+                data = parse_benchmark(path)
+                data["tool"] = tool_name
+                data["seed"] = str(seed)
                 results.append(data)
-                if not headers:
-                    headers = [k for k in data.keys() if k not in ["Tool", "Seed"]]
         
         # Add samsampleX_map (single run, no replicates)
-        map_data = parse_log("samsampleX-map.log")
-        map_data["Tool"] = "samsampleX_map"
-        map_data["Seed"] = "NA"
+        map_data = parse_benchmark("benchmarks/samsampleX-map.tsv")
+        map_data["tool"] = "samsampleX-map"
+        map_data["seed"] = "NA"
         results.append(map_data)
         
+        # Snakemake benchmark columns: s, h:m:s, max_rss, max_vms, max_uss, max_pss, io_in, io_out, mean_load, cpu_time
+        headers = ["s", "h:m:s", "max_rss", "max_vms", "max_uss", "max_pss", "io_in", "io_out", "mean_load", "cpu_time"]
+        
         with open(output.results, 'w') as out:
-            out.write('\t'.join(['Tool', 'Seed'] + headers) + '\n')
+            out.write('\t'.join(['tool', 'seed'] + headers) + '\n')
             for data in results:
-                row = [data.get("Tool", ""), data.get("Seed", "")] + [data.get(h, '') for h in headers]
+                row = [data.get("tool", ""), data.get("seed", "")] + [data.get(h, '') for h in headers]
                 out.write('\t'.join(row) + '\n')
 
 
 rule results_summary:
     """
-    Compute summary statistics (mean, std, min, max) across replicates for each tool
+    Compute summary statistics (mean, std, min, max) across replicates for each tool.
+    Benchmark TSV values are already clean numeric format.
     """
     input:
         results="results.tsv"
@@ -409,20 +405,15 @@ rule results_summary:
         time=TIME,
     run:
         import statistics
-        import re
         
         def parse_numeric(val):
-            """Extract numeric value from string (handles units like '123 kB')"""
-            if not val:
+            """Parse numeric value from benchmark TSV (already clean format)"""
+            if not val or val == "NA":
                 return None
-            # Try to extract first numeric part
-            match = re.match(r'^([\d.]+)', val.replace(',', ''))
-            if match:
-                try:
-                    return float(match.group(1))
-                except ValueError:
-                    return None
-            return None
+            try:
+                return float(val)
+            except ValueError:
+                return None
         
         # Read results
         with open(input.results) as f:
@@ -433,17 +424,17 @@ rule results_summary:
         tool_data = {}
         for row in rows:
             row_dict = dict(zip(header, row))
-            tool = row_dict['Tool']
+            tool = row_dict['tool']
             if tool not in tool_data:
                 tool_data[tool] = []
             tool_data[tool].append(row_dict)
         
-        # Compute statistics for numeric columns
-        numeric_cols = [h for h in header if h not in ['Tool', 'Seed']]
+        # Numeric columns from benchmark format (exclude h:m:s which is string)
+        numeric_cols = ["s", "max_rss", "max_vms", "max_uss", "max_pss", "io_in", "io_out", "mean_load", "cpu_time"]
         
         summary_rows = []
         for tool, reps in tool_data.items():
-            summary = {'Tool': tool, 'N_replicates': len(reps)}
+            summary = {'tool': tool, 'n_replicates': len(reps)}
             
             for col in numeric_cols:
                 values = [parse_numeric(r.get(col, '')) for r in reps]
@@ -476,9 +467,9 @@ rule index_output_bam:
     Index output BAM files for stats comparison
     """
     input:
-        bam="{tool}.seed{seed}.bam"
+        bam="{tool}-seed{seed}-bam"
     output:
-        index="{tool}.seed{seed}.bam.bai"
+        index="{tool}-seed{seed}-bam.bai"
     wildcard_constraints:
         seed="\d+",
     resources:
@@ -497,8 +488,8 @@ rule compare_stats:
     This measures how well each tool's output matches the target depth distribution.
     """
     input:
-        tool_bam="{tool}.seed{seed}.bam",
-        tool_index="{tool}.seed{seed}.bam.bai",
+        tool_bam="{tool}-seed{seed}-bam",
+        tool_index="{tool}-seed{seed}-bam.bai",
         template_bam=TEMPLATE_BAM,
         binary=SAMSAMPLEX,
     params:
@@ -508,7 +499,7 @@ rule compare_stats:
     wildcard_constraints:
         seed="\d+",
     output:
-        stats="{tool}.seed{seed}.stats"
+        stats="{tool}-seed{seed}-stats"
     resources:
         cpus=1,
         mem_mb=4096,
@@ -530,7 +521,7 @@ rule stats_summary:
     Output: TSV with tool, metrics mean, and std. dev.
     """
     input:
-        stats=expand("{tool}.seed{seed}.stats", tool=COMPARISON_TOOLS, seed=SEEDS),
+        stats=expand("{tool}-seed{seed}-stats", tool=COMPARISON_TOOLS, seed=SEEDS),
     output:
         summary="stats_summary.tsv"
     resources:
@@ -571,7 +562,7 @@ rule stats_summary:
         
         for tool in COMPARISON_TOOLS:
             for seed in SEEDS:
-                filepath = f"{tool}.seed{seed}.stats"
+                filepath = f"{tool}-seed{seed}-stats"
                 data = parse_stats_file(filepath)
                 if data:
                     tool_results[tool].append(data)
@@ -620,8 +611,8 @@ rule stats_summary:
 rule consolidated_summary:
     """
     Consolidate runtime and accuracy metrics into a single table.
-    Combines Wall Clock, Memory from results_summary.tsv with Total Variation and 
-    Wasserstein-1 from stats_summary.tsv.
+    Combines Wall Clock (s), Memory (max_rss) from results_summary.tsv with 
+    Total Variation and Wasserstein-1 from stats_summary.tsv.
     """
     input:
         runtime="results_summary.tsv",
@@ -633,17 +624,7 @@ rule consolidated_summary:
         mem_mb=1024,
         time="01:00",
     run:
-        # Tool name mapping: results_summary uses underscores, stats_summary uses hyphens
-        tool_name_map = {
-            "gatk_high_accuracy": "gatk-high-accuracy",
-            "gatk_constant_memory": "gatk-constant-memory",
-            "gatk_chained": "gatk-chained",
-            "samtools": "samtools",
-            "sambamba": "sambamba",
-            "samsampleX_sample": "samsampleX-sample",
-        }
-        
-        # Read runtime summary
+        # Read runtime summary (benchmark format: s in seconds, max_rss in MB)
         runtime_data = {}
         with open(input.runtime) as f:
             header = f.readline().strip().split('\t')
@@ -653,19 +634,19 @@ rule consolidated_summary:
                     continue
                 fields = line.strip().split('\t')
                 tool = fields[0]
-                if tool == "samsampleX_map":  # Skip map step
+                if tool == "samsampleX-map":  # Skip map step
                     continue
                 
-                # Extract Wall Clock (convert to minutes) and Memory (convert to GB)
-                wall_mean = fields[col_idx.get('Elapsed (wall clock) time (h:mm:ss or m:ss)_mean', -1)]
-                wall_std = fields[col_idx.get('Elapsed (wall clock) time (h:mm:ss or m:ss)_std', -1)]
-                mem_mean = fields[col_idx.get('Maximum resident set size (kbytes)_mean', -1)]
-                mem_std = fields[col_idx.get('Maximum resident set size (kbytes)_std', -1)]
+                # Extract wall clock time (s) and memory (max_rss in MB)
+                wall_mean = fields[col_idx.get('s_mean', -1)]
+                wall_std = fields[col_idx.get('s_std', -1)]
+                mem_mean = fields[col_idx.get('max_rss_mean', -1)]
+                mem_std = fields[col_idx.get('max_rss_std', -1)]
                 
-                # Convert memory from kbytes to GB
+                # Convert memory from MB to GB
                 try:
-                    mem_mean_gb = float(mem_mean) / 1_000_000
-                    mem_std_gb = float(mem_std) / 1_000_000
+                    mem_mean_gb = float(mem_mean) / 1000
+                    mem_std_gb = float(mem_std) / 1000 if mem_std != "NA" else 0
                 except (ValueError, TypeError):
                     mem_mean_gb = 0
                     mem_std_gb = 0
@@ -702,7 +683,7 @@ rule consolidated_summary:
         
         # Merge and write consolidated table
         with open(output.consolidated, 'w') as out:
-            out.write("Tool\tWall Clock (min)\tMemory (GB)\tTV\tNorm. W1\n")
+            out.write("Tool\tWall Clock (s)\tMemory (GB)\tTV\tNorm. W1\n")
             
             # Sort by wall clock time for nice ordering
             sorted_tools = sorted(runtime_data.keys(), 
@@ -710,10 +691,9 @@ rule consolidated_summary:
             
             for tool in sorted_tools:
                 rt = runtime_data[tool]
-                acc_tool = tool_name_map.get(tool, tool)
-                acc = accuracy_data.get(acc_tool, {})
+                acc = accuracy_data.get(tool, {})
                 
-                # Format Wall Clock
+                # Format Wall Clock (already in seconds)
                 try:
                     wall_str = f"{float(rt['wall_mean']):.1f} ± {float(rt['wall_std']):.1f}"
                 except (ValueError, TypeError):
