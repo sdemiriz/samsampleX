@@ -1,0 +1,40 @@
+benchmarks:
+  wgs-chr21:
+    chr: "chr21"
+    start: 1
+    end: 46709982
+    seed: 42
+    n_replicates: 10
+
+    templates:
+      - "HG00157.bam"
+    source: "HG002.GRCh38.300x.bam"
+
+    coefficient: 0.1
+    mode: "mean"
+    collapse: 100
+
+    cpu: 1
+    mem_mb: 16384
+    time: "10:00"
+
+  wegs-8p5x-chr21:
+    chr: "chr21"
+    start: 1
+    end: 46709982
+    seed: 42
+    n_replicates: 10
+
+    templates:
+      - "HG002-WEGS-8P5X-R1.bam"
+    source: "HG002.GRCh38.300x.bam"
+
+    coefficient: 0.1
+    mode: "mean"
+    collapse: 100
+
+    cpu: 1
+    mem_mb: 16384
+    time: "10:00"
+
+
