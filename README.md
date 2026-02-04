@@ -8,7 +8,7 @@ A C-based tool for customizable BAM file downsampling. Sample reads from a sourc
 - Calculation of quality metrics:
     - Wasserstein distance: distribution-wide downsampling performance.
     - MAE: per-base downsampling performance.
-- Depth comparison plots (PNG) for visualizing sampling results.
+- Depth comparison plotting for visual sampling comparisons, with the option to emit a TSV file of the same data instead.
 
 ## Installation
 ### Requirements
@@ -68,7 +68,11 @@ samsampleX sample \
 | `--no-sort` | Skip sorting and indexing output | false |
 
 ### Plotting
-Compare depth of coverage between source, template, and output BAM files. Output as PNG plot or TSV data.
+Compare depth of coverage between source, template, and output BAM files. Output either as PNG plot or TSV data.
+
+Blue is source, green is template and red is output depth.
+
+TSV contains a column for `position`, and three for respective depths of source, template and output.
 ```bash
 # Generate PNG plot
 samsampleX plot \
@@ -77,14 +81,6 @@ samsampleX plot \
     --out-bam sampled.bam \
     --region chr1:1000-2000 \
     --out-png coverage_plot.png
-
-# Export TSV for custom plotting (e.g., with matplotlib)
-samsampleX plot \
-    --source-bam high_depth.bam \
-    --template-bed template.bed \
-    --out-bam sampled.bam \
-    --region chr1:1000-2000 \
-    --out-tsv depths.tsv
 ```
 
 | Option | Description | Default |
@@ -96,13 +92,6 @@ samsampleX plot \
 | `--region REGION` | Target region, samtools-style (required) | - |
 | `--out-png FILE` | Output PNG plot (mutually exclusive with --out-tsv) | - |
 | `--out-tsv FILE` | Output TSV data (mutually exclusive with --out-png) | - |
-
-**PNG output** displays three line series:
-- **Blue**: Source BAM depth
-- **Green**: Template depth (from BAM or BED)
-- **Red**: Output BAM depth
-
-**TSV output** columns: `position`, `source_depth`, `template_depth`, `output_depth`
 
 ## Testing
 ```bash
@@ -165,5 +154,5 @@ The output files `results.tsv` and `results-summary.tsv` should contain the deta
 
 ## Acknowledgments
 - Uses [xxHash](https://github.com/Cyan4973/xxHash) for fast hashing (BSD-2 license)
-- Uses [pbPlots](https://github.com/InductiveComputerScience/pbPlots) for PNG plot generation
+- Uses [pbPlots](https://github.com/InductiveComputerScience/pbPlots) for plotting
 - Built on [htslib](https://github.com/samtools/htslib)
