@@ -7,7 +7,7 @@ A C-based tool for customizable BAM file downsampling. Sample reads from a sourc
 - BED template compression and/or smoothing.
 - Calculation of quality metrics:
     - Wasserstein distance: distribution-wide downsampling performance.
-    - MAE: per-base downsampling performance.
+    - Total Variation: per-base downsampling performance.
 - Depth comparison plotting for visual sampling comparisons, with the option to emit a TSV file of the same data instead.
 
 ## Installation
@@ -110,7 +110,7 @@ make test-integration
 |-----------|-------------|
 | `test_parsing.c` | Region string parsing, combine mode parsing |
 | `test_depth.c` | Depth array allocation, combine operations |
-| `test_metrics.c` | MAE, Wasserstein distance calculations |
+| `test_metrics.c` | Total Variation, Wasserstein distance calculations |
 | `integration_tests.sh` | CLI help, subcommand arguments, error handling |
 
 ## Benchmarking
@@ -141,13 +141,13 @@ The output files `results.tsv` and `results-summary.tsv` should contain the deta
    - Compute read's mean ratio based on covered positions $\mu(ratio_{depth}) = \sum_{i}^{i+l_{read}} ratio_{depth}(i) / l_{read}$
    - Select and sample read if $\mu(ratio_{depth}) < f_{read}$
 5. Sort and index output BAM
-6. Report metrics (Wasserstein distance, MAE)
+6. Report metrics (Total Variation, Wasserstein distance 1)
 
 ## Metrics
 | Metric | Significance |
 | ------ | ------------ |
 | Wasserstein-1 Distance | Difference between depth distributions |
-| MAE | Mean Absolute Error per position |
+| Total Variation | Per-position depth difference (half of MAE) |
 | Mean Template Depth | Average depth in the template |
 | Mean Output Depth | Average depth in the output |
 

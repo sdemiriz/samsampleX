@@ -18,6 +18,7 @@ SRCS = $(SRC_DIR)/main.c \
        $(SRC_DIR)/map.c \
        $(SRC_DIR)/sample.c \
        $(SRC_DIR)/plot.c \
+       $(SRC_DIR)/stats.c \
        $(SRC_DIR)/bed.c \
        $(SRC_DIR)/depth.c \
        $(SRC_DIR)/metrics.c \
@@ -140,10 +141,11 @@ test: test-unit test-integration
 .PHONY: all check-htslib install uninstall clean test test-unit test-integration
 
 # Dependencies (auto-generated would be better, but keep it simple)
-$(BUILD_DIR)/main.o: $(SRC_DIR)/main.c $(INC_DIR)/samsampleX.h $(SRC_DIR)/map.h $(SRC_DIR)/sample.h $(SRC_DIR)/plot.h
+$(BUILD_DIR)/main.o: $(SRC_DIR)/main.c $(INC_DIR)/samsampleX.h $(SRC_DIR)/map.h $(SRC_DIR)/sample.h $(SRC_DIR)/plot.h $(SRC_DIR)/stats.h
 $(BUILD_DIR)/map.o: $(SRC_DIR)/map.c $(SRC_DIR)/map.h $(INC_DIR)/samsampleX.h $(SRC_DIR)/bed.h $(SRC_DIR)/depth.h
 $(BUILD_DIR)/sample.o: $(SRC_DIR)/sample.c $(SRC_DIR)/sample.h $(INC_DIR)/samsampleX.h $(SRC_DIR)/bed.h $(SRC_DIR)/depth.h $(SRC_DIR)/metrics.h
 $(BUILD_DIR)/plot.o: $(SRC_DIR)/plot.c $(SRC_DIR)/plot.h $(INC_DIR)/samsampleX.h $(SRC_DIR)/bed.h $(SRC_DIR)/depth.h $(SRC_DIR)/pbPlots.h $(SRC_DIR)/supportLib.h
+$(BUILD_DIR)/stats.o: $(SRC_DIR)/stats.c $(SRC_DIR)/stats.h $(INC_DIR)/samsampleX.h $(SRC_DIR)/bed.h $(SRC_DIR)/depth.h $(SRC_DIR)/metrics.h
 $(BUILD_DIR)/bed.o: $(SRC_DIR)/bed.c $(SRC_DIR)/bed.h $(INC_DIR)/samsampleX.h
 $(BUILD_DIR)/depth.o: $(SRC_DIR)/depth.c $(SRC_DIR)/depth.h $(INC_DIR)/samsampleX.h
 $(BUILD_DIR)/metrics.o: $(SRC_DIR)/metrics.c $(SRC_DIR)/metrics.h $(INC_DIR)/samsampleX.h
