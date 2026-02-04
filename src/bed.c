@@ -8,6 +8,7 @@
 #include <ctype.h>
 
 #include "bed.h"
+#include "depth.h"
 #include "samsampleX.h"
 
 /*
@@ -89,8 +90,8 @@ depth_array_t *bed_read_depths(const char *bed_path, const char *contig,
             depth = atoi(token);
         }
         
-        /* Skip if different contig */
-        if (strcmp(chrom, contig) != 0) {
+        /* Skip if different contig (handles chr prefix mismatch) */
+        if (!contig_names_match(chrom, contig)) {
             continue;
         }
         

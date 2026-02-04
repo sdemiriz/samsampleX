@@ -54,5 +54,25 @@ combine_mode_t parse_combine_mode(const char *mode_str);
  */
 const char *combine_mode_to_string(combine_mode_t mode);
 
+/*
+ * Resolve contig name against BAM header, handling chr prefix mismatch.
+ * Tries: exact match, then with "chr" removed, then with "chr" added.
+ *
+ * @header: BAM header to search
+ * @contig: User-provided contig name
+ * @return: Matched contig name from header (caller must free), or NULL if not found
+ */
+char *resolve_contig_name(sam_hdr_t *header, const char *contig);
+
+/*
+ * Check if two contig names match, considering chr prefix variations.
+ * E.g., "chr21" matches "21", "chrX" matches "X".
+ *
+ * @name1: First contig name
+ * @name2: Second contig name
+ * @return: 1 if names match, 0 otherwise
+ */
+int contig_names_match(const char *name1, const char *name2);
+
 #endif /* DEPTH_H */
 

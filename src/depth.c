@@ -15,6 +15,70 @@
 #include "samsampleX.h"
 
 /*
+ * Check if two contig names match, considering chr prefix variations.
+ * Returns 1 (true) if names match with or without "chr" prefix.
+ * E.g., "chr21" matches "21", "chrX" matches "X".
+ */
+int contig_names_match(const char *name1, const char *name2) {
+    if (!name1 || !name2) return 0;
+    
+    /* Exact match */
+    if (strcmp(name1, name2) == 0) return 1;
+    
+    /* Check if one has "chr" prefix and the other doesn't */
+    const char *n1_base = name1;
+    const char *n2_base = name2;
+    
+    if (strncmp(name1, "chr", 3) == 0) {
+        n1_base = name1 + 3;
+    }
+    if (strncmp(name2, "chr", 3) == 0) {
+        n2_base = name2 + 3;
+    }
+    
+    return strcmp(n1_base, n2_base) == 0;
+}
+
+/*
+ * Resolve contig name against BAM header, handling chr prefix mismatch.
+ * Tries: exact match, then with "chr" removed, then with "chr" added.
+ * Returns the matching contig name from header (caller must free), or NULL.
+ */
+char *resolve_contig_name(sam_hdr_t *header, const char *contig) {
+    if (!header || !contig) return NULL;
+    
+    /* Try exact match first */
+    int tid = sam_hdr_name2tid(header, contig);
+    if (tid >= 0) {
+        return strdup(contig);
+    }
+    
+    /* Try without "chr" prefix if it has one */
+    if (strncmp(contig, "chr", 3) == 0) {
+        const char *no_chr = contig + 3;
+        tid = sam_hdr_name2tid(header, no_chr);
+        if (tid >= 0) {
+            fprintf(stderr, "Note: Using contig '%s' (matched from '%s')\n", no_chr, contig);
+            return strdup(no_chr);
+        }
+    }
+    
+    /* Try with "chr" prefix if it doesn't have one */
+    if (strncmp(contig, "chr", 3) != 0) {
+        char with_chr[256];
+        snprintf(with_chr, sizeof(with_chr), "chr%s", contig);
+        tid = sam_hdr_name2tid(header, with_chr);
+        if (tid >= 0) {
+            fprintf(stderr, "Note: Using contig '%s' (matched from '%s')\n", with_chr, contig);
+            return strdup(with_chr);
+        }
+    }
+    
+    /* No match found */
+    return NULL;
+}
+
+/*
  * Compute depth of coverage for a region from a BAM file.
  */
 depth_array_t *depth_from_bam(const char *bam_path, const char *contig,
@@ -44,15 +108,18 @@ depth_array_t *depth_from_bam(const char *bam_path, const char *contig,
         return NULL;
     }
     
-    /* Get contig ID */
-    int tid = sam_hdr_name2tid(header, contig);
-    if (tid < 0) {
+    /* Resolve contig name (handles chr prefix mismatch) */
+    char *resolved_contig = resolve_contig_name(header, contig);
+    if (!resolved_contig) {
         fprintf(stderr, "Error: Contig '%s' not found in BAM header\n", contig);
         hts_idx_destroy(idx);
         sam_hdr_destroy(header);
         hts_close(fp);
         return NULL;
     }
+    
+    /* Get contig ID using resolved name */
+    int tid = sam_hdr_name2tid(header, resolved_contig);
     
     /* Get contig length if end is not specified */
     if (end < 0 || end > sam_hdr_tid2len(header, tid)) {
@@ -62,8 +129,9 @@ depth_array_t *depth_from_bam(const char *bam_path, const char *contig,
         start = 0;
     }
     
-    /* Allocate depth array */
-    depth_array_t *arr = depth_array_alloc(contig, start, end);
+    /* Allocate depth array with resolved contig name */
+    depth_array_t *arr = depth_array_alloc(resolved_contig, start, end);
+    free(resolved_contig);
     
     /* Set up iterator for region */
     hts_itr_t *iter = sam_itr_queryi(idx, tid, start, end);
@@ -128,9 +196,15 @@ depth_array_t *depth_from_bam(const char *bam_path, const char *contig,
 
 /*
  * Get contig length from BAM header.
+ * Handles chr prefix mismatch automatically.
  */
 int64_t get_contig_length(sam_hdr_t *header, const char *contig) {
-    int tid = sam_hdr_name2tid(header, contig);
+    char *resolved = resolve_contig_name(header, contig);
+    if (!resolved) {
+        return -1;
+    }
+    int tid = sam_hdr_name2tid(header, resolved);
+    free(resolved);
     if (tid < 0) {
         return -1;
     }

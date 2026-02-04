@@ -152,9 +152,9 @@ int sample_run(sample_args_t *args) {
         return 1;
     }
     
-    /* Get contig ID and length */
-    int tid = sam_hdr_name2tid(header, region->contig);
-    if (tid < 0) {
+    /* Resolve contig name (handles chr prefix mismatch) */
+    char *resolved_contig = resolve_contig_name(header, region->contig);
+    if (!resolved_contig) {
         fprintf(stderr, "Error: Contig '%s' not found in BAM\n", region->contig);
         hts_idx_destroy(idx);
         sam_hdr_destroy(header);
@@ -162,6 +162,13 @@ int sample_run(sample_args_t *args) {
         region_free(region);
         return 1;
     }
+    
+    /* Update region with resolved contig name */
+    free(region->contig);
+    region->contig = resolved_contig;
+    
+    /* Get contig ID using resolved name */
+    int tid = sam_hdr_name2tid(header, region->contig);
     
     /* Set region bounds */
     if (region->start < 0) region->start = 0;
