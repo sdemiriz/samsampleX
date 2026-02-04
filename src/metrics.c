@@ -3,7 +3,7 @@
  *
  * Implements:
  * - Wasserstein-1 distance (Earth Mover's Distance) between depth distributions
- * - Mean Absolute Error (MAE) for per-base depth comparison
+ * - Total Variation (TV) distance for per-base depth comparison
  */
 
 #include <stdio.h>
@@ -74,10 +74,14 @@ static double calculate_wasserstein(const int32_t *depths_a, const int32_t *dept
 }
 
 /*
- * Calculate Mean Absolute Error between two depth arrays.
+ * Calculate Total Variation distance between two depth arrays.
+ * TV = (1/2) * sum|a[i] - b[i]| / n
+ * 
+ * This is half of MAE and represents the proportion of depth that differs
+ * between the two arrays at each position on average.
  */
-static double calculate_mae(const int32_t *depths_a, const int32_t *depths_b,
-                            size_t n) {
+static double calculate_tv(const int32_t *depths_a, const int32_t *depths_b,
+                           size_t n) {
     if (n == 0) return 0.0;
     
     double sum = 0.0;
@@ -87,7 +91,7 @@ static double calculate_mae(const int32_t *depths_a, const int32_t *depths_b,
         sum += (double)diff;
     }
     
-    return sum / (double)n;
+    return sum / (2.0 * (double)n);
 }
 
 /*
@@ -126,7 +130,7 @@ int metrics_calculate(const depth_array_t *template_depth,
     /* Calculate metrics */
     result->wasserstein = calculate_wasserstein(template_depth->depths, 
                                                  output_depth->depths, n);
-    result->mae = calculate_mae(template_depth->depths, output_depth->depths, n);
+    result->tv = calculate_tv(template_depth->depths, output_depth->depths, n);
     result->mean_template = calculate_mean(template_depth->depths, n);
     result->mean_output = calculate_mean(output_depth->depths, n);
     
@@ -137,11 +141,10 @@ int metrics_calculate(const depth_array_t *template_depth,
  * Print metrics to stderr.
  */
 void metrics_print(const metrics_result_t *result) {
-    fprintf(stderr, "\n========== Sampling Metrics ==========\n");
     fprintf(stderr, "Mean Template Depth:     %.2f\n", result->mean_template);
     fprintf(stderr, "Mean Output Depth:       %.2f\n", result->mean_output);
-    fprintf(stderr, "Mean Absolute Error:     %.4f\n", result->mae);
-    fprintf(stderr, "Wasserstein-1 Distance:  %.6f\n", result->wasserstein);
+    fprintf(stderr, "Total Variation:         %.4f\n", result->tv);
+    fprintf(stderr, "Norm. Wasserstein Dist.:    %.6f\n", result->wasserstein);
     fprintf(stderr, "=======================================\n");
 }
 

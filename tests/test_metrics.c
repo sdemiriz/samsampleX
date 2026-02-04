@@ -1,5 +1,5 @@
 /*
- * test_metrics.c - Unit tests for metrics calculations (Wasserstein, MAE)
+ * test_metrics.c - Unit tests for metrics calculations (Wasserstein, TV)
  */
 
 #include <stdio.h>
@@ -12,10 +12,10 @@
 #include "../src/metrics.h"
 
 /* ============================================================
- * MAE Tests
+ * Total Variation Tests
  * ============================================================ */
 
-TEST_BEGIN(mae_identical_arrays)
+TEST_BEGIN(tv_identical_arrays)
     depth_array_t *a = depth_array_alloc("chr1", 0, 5);
     depth_array_t *b = depth_array_alloc("chr1", 0, 5);
     
@@ -28,17 +28,17 @@ TEST_BEGIN(mae_identical_arrays)
     int ret = metrics_calculate(a, b, &result);
     
     ASSERT_EQ(0, ret);
-    ASSERT_EQ_DBL(0.0, result.mae, 0.0001);
+    ASSERT_EQ_DBL(0.0, result.tv, 0.0001);
     
     depth_array_free(a);
     depth_array_free(b);
 TEST_END()
 
-TEST_BEGIN(mae_uniform_difference)
+TEST_BEGIN(tv_uniform_difference)
     depth_array_t *a = depth_array_alloc("chr1", 0, 4);
     depth_array_t *b = depth_array_alloc("chr1", 0, 4);
     
-    /* All positions differ by 10 */
+    /* All positions differ by 10, TV = 10/2 = 5 */
     a->depths[0] = 100; b->depths[0] = 110;
     a->depths[1] = 50;  b->depths[1] = 60;
     a->depths[2] = 75;  b->depths[2] = 85;
@@ -48,17 +48,17 @@ TEST_BEGIN(mae_uniform_difference)
     int ret = metrics_calculate(a, b, &result);
     
     ASSERT_EQ(0, ret);
-    ASSERT_EQ_DBL(10.0, result.mae, 0.0001);
+    ASSERT_EQ_DBL(5.0, result.tv, 0.0001);
     
     depth_array_free(a);
     depth_array_free(b);
 TEST_END()
 
-TEST_BEGIN(mae_mixed_difference)
+TEST_BEGIN(tv_mixed_difference)
     depth_array_t *a = depth_array_alloc("chr1", 0, 4);
     depth_array_t *b = depth_array_alloc("chr1", 0, 4);
     
-    /* Differences: 10, 20, 0, 30 => MAE = 60/4 = 15 */
+    /* Differences: 10, 20, 0, 30 => TV = (60/4) / 2 = 7.5 */
     a->depths[0] = 100; b->depths[0] = 110;
     a->depths[1] = 50;  b->depths[1] = 70;
     a->depths[2] = 75;  b->depths[2] = 75;
@@ -68,13 +68,13 @@ TEST_BEGIN(mae_mixed_difference)
     int ret = metrics_calculate(a, b, &result);
     
     ASSERT_EQ(0, ret);
-    ASSERT_EQ_DBL(15.0, result.mae, 0.0001);
+    ASSERT_EQ_DBL(7.5, result.tv, 0.0001);
     
     depth_array_free(a);
     depth_array_free(b);
 TEST_END()
 
-TEST_BEGIN(mae_negative_differences)
+TEST_BEGIN(tv_negative_differences)
     depth_array_t *a = depth_array_alloc("chr1", 0, 4);
     depth_array_t *b = depth_array_alloc("chr1", 0, 4);
     
@@ -83,13 +83,13 @@ TEST_BEGIN(mae_negative_differences)
     a->depths[1] = 50;  b->depths[1] = 70;   /* |50-70| = 20 */
     a->depths[2] = 75;  b->depths[2] = 55;   /* |75-55| = 20 */
     a->depths[3] = 200; b->depths[3] = 210;  /* |200-210| = 10 */
-    /* MAE = 60/4 = 15 */
+    /* TV = (60/4) / 2 = 7.5 */
     
     metrics_result_t result;
     int ret = metrics_calculate(a, b, &result);
     
     ASSERT_EQ(0, ret);
-    ASSERT_EQ_DBL(15.0, result.mae, 0.0001);
+    ASSERT_EQ_DBL(7.5, result.tv, 0.0001);
     
     depth_array_free(a);
     depth_array_free(b);
@@ -244,11 +244,11 @@ TEST_END()
  * ============================================================ */
 
 int main(void) {
-    TEST_SUITE_BEGIN("Mean Absolute Error");
-    RUN_TEST(mae_identical_arrays);
-    RUN_TEST(mae_uniform_difference);
-    RUN_TEST(mae_mixed_difference);
-    RUN_TEST(mae_negative_differences);
+    TEST_SUITE_BEGIN("Total Variation");
+    RUN_TEST(tv_identical_arrays);
+    RUN_TEST(tv_uniform_difference);
+    RUN_TEST(tv_mixed_difference);
+    RUN_TEST(tv_negative_differences);
     
     TEST_SUITE_BEGIN("Wasserstein Distance");
     RUN_TEST(wasserstein_identical);

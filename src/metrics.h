@@ -12,7 +12,7 @@
  */
 typedef struct {
     double wasserstein;     /* Wasserstein-1 distance */
-    double mae;             /* Mean Absolute Error */
+    double tv;              /* Total Variation distance (per-position) */
     double mean_template;   /* Mean depth in template */
     double mean_output;     /* Mean depth in output */
 } metrics_result_t;

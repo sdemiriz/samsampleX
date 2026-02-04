@@ -17,6 +17,7 @@
 #include "map.h"
 #include "sample.h"
 #include "plot.h"
+#include "stats.h"
 #include "depth.h"
 
 /*
@@ -28,7 +29,8 @@ static void print_usage(void) {
     fprintf(stderr, "Commands:\n");
     fprintf(stderr, "  map      Extract depth of coverage from BAM to BED template\n");
     fprintf(stderr, "  sample   Sample reads from BAM to match template depth distribution\n");
-    fprintf(stderr, "  plot     Generate depth comparison plot (PNG)\n\n");
+    fprintf(stderr, "  plot     Generate depth comparison plot (PNG)\n");
+    fprintf(stderr, "  stats    Compare depth distributions between two BAM files\n\n");
     fprintf(stderr, "Use '%s <command> --help' for command-specific help.\n", SAMSAMPLEX_NAME);
 }
 
@@ -235,6 +237,50 @@ static int parse_plot_args(int argc, char *argv[], plot_args_t *args) {
 }
 
 /*
+ * Parse arguments for the 'stats' subcommand.
+ */
+static int parse_stats_args(int argc, char *argv[], stats_args_t *args) {
+    static struct option long_options[] = {
+        {"bam-a",  required_argument, 0, 'a'},
+        {"bam-b",  required_argument, 0, 'b'},
+        {"region", required_argument, 0, 'r'},
+        {"help",   no_argument,       0, 'h'},
+        {0, 0, 0, 0}
+    };
+    
+    /* Set defaults */
+    memset(args, 0, sizeof(*args));
+    
+    int opt;
+    int option_index = 0;
+    
+    /* Reset getopt for subcommand parsing */
+    optind = 1;
+    
+    while ((opt = getopt_long(argc, argv, "a:b:r:h", long_options, &option_index)) != -1) {
+        switch (opt) {
+            case 'a':
+                args->bam_a = optarg;
+                break;
+            case 'b':
+                args->bam_b = optarg;
+                break;
+            case 'r':
+                args->region = optarg;
+                break;
+            case 'h':
+                stats_usage();
+                exit(0);
+            default:
+                stats_usage();
+                return -1;
+        }
+    }
+    
+    return 0;
+}
+
+/*
  * Main entry point.
  */
 int main(int argc, char *argv[]) {
@@ -278,6 +324,13 @@ int main(int argc, char *argv[]) {
             return 1;
         }
         return plot_run(&args);
+    }
+    else if (strcmp(command, "stats") == 0) {
+        stats_args_t args;
+        if (parse_stats_args(argc - 1, argv + 1, &args) != 0) {
+            return 1;
+        }
+        return stats_run(&args);
     }
     else {
         fprintf(stderr, "Error: Unknown command '%s'\n\n", command);
