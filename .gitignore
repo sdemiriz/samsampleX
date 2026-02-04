@@ -8,12 +8,18 @@ tests/test_depth
 tests/test_metrics
 
 # Test files (root level)
+*.cram
+*.crai
 *.bam
 *.bai
 *.bed
+*.tsv
+*.png
+*.sh
 
 # Benchmark outputs
 benchmarks/.snakemake/
+benchmarks/*.stats
 benchmarks/*.log
 benchmarks/*.bam
 benchmarks/*.bai
@@ -24,4 +30,7 @@ benchmarks/*.bed
 *.swp
 *~
 .vscode/
+
+# Virtual environment
+venv/
 
