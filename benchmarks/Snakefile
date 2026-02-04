@@ -13,6 +13,10 @@ END = 46709982
 # START = 29941260
 # END = 29949572
 
+# CHR = "chr12"
+# START = 6534012
+# END = 6538930
+
 INPUT_URL = "https://ftp.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/AshkenazimTrio/HG002_NA24385_son/NIST_HiSeq_HG002_Homogeneity-10953946/NHGRI_Illumina300X_AJtrio_novoalign_bams/HG002.GRCh38.300x.bam"
 INPUT_PREFIX = "HG002.GRCh38.300x"
 INPUT_BAM = f"../../subsample-reads/{INPUT_PREFIX}.bam"
@@ -20,24 +24,34 @@ INPUT_BAM = f"../../subsample-reads/{INPUT_PREFIX}.bam"
 TARGET_BAM = f"{INPUT_PREFIX}-{CHR}-{START}-{END}.bam"
 
 TEMPLATE_URL = "ftp://ftp.sra.ebi.ac.uk/vol1/run/ERR324/ERR3240157/HG00157.final.cram"
-TEMPLATE_PREFIX = "HG00157"
-TEMPLATE_BAM = f"../../subsample-reads/{TEMPLATE_PREFIX}.bam"
+# TEMPLATE_PREFIX = "HG00157"
+# TEMPLATE_BAM = f"../../subsample-reads/{TEMPLATE_PREFIX}.bam"
+
+TEMPLATE_PREFIX = "HG002-WEGS-8P5X-R1"
+TEMPLATE_BAM = f"../{TEMPLATE_PREFIX}.bam"
 TEMPLATE = f"{TEMPLATE_PREFIX}-{CHR}-{START}-{END}.bed"
 
 # Path to the C samsampleX binary (built from parent directory)
 SAMSAMPLEX = "../samsampleX"
 
 ### RESOURCES
-CPU = 4
+CPU = 1
 MEM_MB = 16384
-TIME = "24:00:00"
-
+TIME = "10:00"
 
 ### RULES
+COMPARISON_TOOLS = [
+    "gatk-high-accuracy",
+    "gatk-constant-memory",
+    "gatk-chained",
+    "samtools",
+    "sambamba",
+    "samsampleX-sample"
+]
+
 rule all:
     input:
-        "results.tsv",
-        "results_summary.tsv"
+        "consolidated_summary.tsv"
 
 rule build_samsampleX:
     """
@@ -226,7 +240,7 @@ rule sambamba:
         bam=TARGET_BAM,
         index=TARGET_BAM + ".bai",
     params:
-        coefficient=".1",
+        coefficient=0.1,
     wildcard_constraints:
         seed="\d+",
     output:
@@ -241,7 +255,9 @@ rule sambamba:
         env time -o {output.log} -v \
         sambamba view \
         {input.bam} \
-        -s {wildcards.seed}{params.coefficient} \
+        -f bam \
+        -s {params.coefficient} \
+        --subsampling-seed {wildcards.seed} \
         -o {output.bam}
         """
 
@@ -257,7 +273,6 @@ rule samsampleX_map:
         chr=CHR,
         start=START,
         end=END,
-        collapse=1,
     output:
         bed=TEMPLATE,
         log="samsampleX-map.log",
@@ -272,7 +287,6 @@ rule samsampleX_map:
         --template-bam {TEMPLATE_BAM} \
         --region {params.chr}:{params.start}-{params.end} \
         --out-bed {output.bed} \
-        --collapse {params.collapse}
         """
 
 rule samsampleX_sampling:
@@ -390,9 +404,9 @@ rule results_summary:
     output:
         summary="results_summary.tsv"
     resources:
-        cpus=1,
-        mem_mb=1024,
-        time="01:00:00",
+        cpus=CPU,
+        mem_mb=MEM_MB,
+        time=TIME,
     run:
         import statistics
         import re
@@ -457,3 +471,267 @@ rule results_summary:
                     out.write('\t'.join(str(row.get(h, '')) for h in summary_headers) + '\n')
 
 
+rule index_output_bam:
+    """
+    Index output BAM files for stats comparison
+    """
+    input:
+        bam="{tool}.seed{seed}.bam"
+    output:
+        index="{tool}.seed{seed}.bam.bai"
+    wildcard_constraints:
+        seed="\d+",
+    resources:
+        cpus=CPU,
+        mem_mb=MEM_MB,
+        time=TIME,
+    shell:
+        """
+        samtools index {input.bam}
+        """
+
+
+rule compare_stats:
+    """
+    Compare a tool's output against the template BAM using samsampleX stats.
+    This measures how well each tool's output matches the target depth distribution.
+    """
+    input:
+        tool_bam="{tool}.seed{seed}.bam",
+        tool_index="{tool}.seed{seed}.bam.bai",
+        template_bam=TEMPLATE_BAM,
+        binary=SAMSAMPLEX,
+    params:
+        chr=CHR,
+        start=START,
+        end=END,
+    wildcard_constraints:
+        seed="\d+",
+    output:
+        stats="{tool}.seed{seed}.stats"
+    resources:
+        cpus=1,
+        mem_mb=4096,
+        time="10:00",
+    shell:
+        """
+        {input.binary} stats \
+            --bam-a {input.template_bam} \
+            --bam-b {input.tool_bam} \
+            --region {params.chr}:{params.start}-{params.end} \
+            2> {output.stats}
+        """
+
+
+rule stats_summary:
+    """
+    Aggregate stats comparisons across all tools and replicates.
+    Compares each tool's output against the template BAM.
+    Output: TSV with tool, metrics mean, and std. dev.
+    """
+    input:
+        stats=expand("{tool}.seed{seed}.stats", tool=COMPARISON_TOOLS, seed=SEEDS),
+    output:
+        summary="stats_summary.tsv"
+    resources:
+        cpus=1,
+        mem_mb=1024,
+        time="01:00",
+    run:
+        import re
+        import statistics
+        
+        def parse_stats_file(filepath):
+            """Parse samsampleX stats output from stderr"""
+            data = {}
+            with open(filepath) as f:
+                for line in f:
+                    line = line.strip()
+                    # Parse lines like "Mean Depth (BAM A):      123.45"
+                    if "Mean Depth (BAM A):" in line:
+                        match = re.search(r'([\d.]+)\s*$', line)
+                        if match:
+                            data['mean_depth_template'] = float(match.group(1))
+                    elif "Mean Depth (BAM B):" in line:
+                        match = re.search(r'([\d.]+)\s*$', line)
+                        if match:
+                            data['mean_depth_tool'] = float(match.group(1))
+                    elif "Total Variation:" in line:
+                        match = re.search(r'([\d.]+)\s*$', line)
+                        if match:
+                            data['tv'] = float(match.group(1))
+                    elif "Wasserstein-1" in line:
+                        match = re.search(r'([\d.]+)\s*$', line)
+                        if match:
+                            data['wasserstein'] = float(match.group(1))
+            return data
+        
+        # Group results by tool
+        tool_results = {tool: [] for tool in COMPARISON_TOOLS}
+        
+        for tool in COMPARISON_TOOLS:
+            for seed in SEEDS:
+                filepath = f"{tool}.seed{seed}.stats"
+                data = parse_stats_file(filepath)
+                if data:
+                    tool_results[tool].append(data)
+        
+        # Compute summary statistics
+        summary_rows = []
+        metrics = ['tv', 'wasserstein', 'mean_depth_tool']
+        
+        for tool in COMPARISON_TOOLS:
+            results = tool_results[tool]
+            if not results:
+                continue
+            
+            row = {'tool': tool}
+            
+            for metric in metrics:
+                values = [r.get(metric) for r in results if r.get(metric) is not None]
+                if values:
+                    mean_val = statistics.mean(values)
+                    std_val = statistics.stdev(values) if len(values) > 1 else 0.0
+                    row[f'{metric}_mean'] = mean_val
+                    row[f'{metric}_std'] = std_val
+                else:
+                    row[f'{metric}_mean'] = 'NA'
+                    row[f'{metric}_std'] = 'NA'
+            
+            summary_rows.append(row)
+        
+        # Write output TSV
+        headers = ['tool', 'tv_mean', 'tv_std', 'wasserstein_mean', 'wasserstein_std', 
+                   'mean_depth_tool_mean', 'mean_depth_tool_std']
+        
+        with open(output.summary, 'w') as out:
+            out.write('\t'.join(headers) + '\n')
+            for row in summary_rows:
+                values = []
+                for h in headers:
+                    val = row.get(h, 'NA')
+                    if isinstance(val, float):
+                        values.append(f"{val:.6f}")
+                    else:
+                        values.append(str(val))
+                out.write('\t'.join(values) + '\n')
+
+
+rule consolidated_summary:
+    """
+    Consolidate runtime and accuracy metrics into a single table.
+    Combines Wall Clock, Memory from results_summary.tsv with Total Variation and 
+    Wasserstein-1 from stats_summary.tsv.
+    """
+    input:
+        runtime="results_summary.tsv",
+        accuracy="stats_summary.tsv"
+    output:
+        consolidated="consolidated_summary.tsv"
+    resources:
+        cpus=1,
+        mem_mb=1024,
+        time="01:00",
+    run:
+        # Tool name mapping: results_summary uses underscores, stats_summary uses hyphens
+        tool_name_map = {
+            "gatk_high_accuracy": "gatk-high-accuracy",
+            "gatk_constant_memory": "gatk-constant-memory",
+            "gatk_chained": "gatk-chained",
+            "samtools": "samtools",
+            "sambamba": "sambamba",
+            "samsampleX_sample": "samsampleX-sample",
+        }
+        
+        # Read runtime summary
+        runtime_data = {}
+        with open(input.runtime) as f:
+            header = f.readline().strip().split('\t')
+            col_idx = {h: i for i, h in enumerate(header)}
+            for line in f:
+                if not line.strip():
+                    continue
+                fields = line.strip().split('\t')
+                tool = fields[0]
+                if tool == "samsampleX_map":  # Skip map step
+                    continue
+                
+                # Extract Wall Clock (convert to minutes) and Memory (convert to GB)
+                wall_mean = fields[col_idx.get('Elapsed (wall clock) time (h:mm:ss or m:ss)_mean', -1)]
+                wall_std = fields[col_idx.get('Elapsed (wall clock) time (h:mm:ss or m:ss)_std', -1)]
+                mem_mean = fields[col_idx.get('Maximum resident set size (kbytes)_mean', -1)]
+                mem_std = fields[col_idx.get('Maximum resident set size (kbytes)_std', -1)]
+                
+                # Convert memory from kbytes to GB
+                try:
+                    mem_mean_gb = float(mem_mean) / 1_000_000
+                    mem_std_gb = float(mem_std) / 1_000_000
+                except (ValueError, TypeError):
+                    mem_mean_gb = 0
+                    mem_std_gb = 0
+                
+                runtime_data[tool] = {
+                    'wall_mean': wall_mean,
+                    'wall_std': wall_std,
+                    'mem_mean_gb': mem_mean_gb,
+                    'mem_std_gb': mem_std_gb,
+                }
+        
+        # Read accuracy summary
+        accuracy_data = {}
+        with open(input.accuracy) as f:
+            header = f.readline().strip().split('\t')
+            col_idx = {h: i for i, h in enumerate(header)}
+            for line in f:
+                if not line.strip():
+                    continue
+                fields = line.strip().split('\t')
+                tool = fields[0]
+                
+                tv_mean = fields[col_idx.get('tv_mean', -1)]
+                tv_std = fields[col_idx.get('tv_std', -1)]
+                w1_mean = fields[col_idx.get('wasserstein_mean', -1)]
+                w1_std = fields[col_idx.get('wasserstein_std', -1)]
+                
+                accuracy_data[tool] = {
+                    'tv_mean': tv_mean,
+                    'tv_std': tv_std,
+                    'w1_mean': w1_mean,
+                    'w1_std': w1_std,
+                }
+        
+        # Merge and write consolidated table
+        with open(output.consolidated, 'w') as out:
+            out.write("Tool\tWall Clock (min)\tMemory (GB)\tTV\tNorm. W1\n")
+            
+            # Sort by wall clock time for nice ordering
+            sorted_tools = sorted(runtime_data.keys(), 
+                                  key=lambda t: float(runtime_data[t]['wall_mean']) if runtime_data[t]['wall_mean'] not in ['NA', ''] else 999)
+            
+            for tool in sorted_tools:
+                rt = runtime_data[tool]
+                acc_tool = tool_name_map.get(tool, tool)
+                acc = accuracy_data.get(acc_tool, {})
+                
+                # Format Wall Clock
+                try:
+                    wall_str = f"{float(rt['wall_mean']):.1f} ± {float(rt['wall_std']):.1f}"
+                except (ValueError, TypeError):
+                    wall_str = f"{rt['wall_mean']} ± {rt['wall_std']}"
+                
+                # Format Memory
+                mem_str = f"{rt['mem_mean_gb']:.2f} ± {rt['mem_std_gb']:.2f}"
+                
+                # Format TV
+                try:
+                    tv_str = f"{float(acc.get('tv_mean', 'NA')):.2f} ± {float(acc.get('tv_std', 'NA')):.2f}"
+                except (ValueError, TypeError):
+                    tv_str = "NA"
+                
+                # Format Wasserstein
+                try:
+                    w1_str = f"{float(acc.get('w1_mean', 'NA')):.4f} ± {float(acc.get('w1_std', 'NA')):.4f}"
+                except (ValueError, TypeError):
+                    w1_str = "NA"
+                
+                out.write(f"{tool}\t{wall_str}\t{mem_str}\t{tv_str}\t{w1_str}\n")
