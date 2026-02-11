@@ -113,16 +113,6 @@ make test-integration
 | `test_metrics.c` | Total Variation, Wasserstein distance calculations |
 | `integration_tests.sh` | CLI help, subcommand arguments, error handling |
 
-## Benchmarking
-Benchmarking is carried out by a `snakemake` pipeline in the `benchmarks` directory, and is expected to be installed. The GNU `time` utility is used for gathering the runtime metrics for benchmarking. (Note: This is different from the typical `time` command.)
-
-`samsampleX` is compared in performance against `GATK`, `samtools` and `sambamba`, all of which should be installed and available for benchmarking. Be advised that these three tools downsample uniformly against `samsampleX`'s depth-aware method, thus the comparison in performance is not entirely fair due to the difference in functionality.
-
-Configure the benchmarking details at the top of the `Snakefile` to set the genomic region and the count for each tool to be run. Also specify the hardware requirements in terms of cores and memory allocated to each tool. Finally, execute `snakemake` workflow.
-
-The output files `results.tsv` and `results-summary.tsv` should contain the details of the run. For clarity, both `samsampleX` steps `map` and `sample` are benchmarked separately.
-
-`GATK`, `samtools` and `sambamba` 
 ## Algorithm rundown
 
 ### Mapping
@@ -151,8 +141,41 @@ The output files `results.tsv` and `results-summary.tsv` should contain the deta
 | Mean Template Depth | Average depth in the template |
 | Mean Output Depth | Average depth in the output |
 
+## Benchmarking
+Benchmarking is done by a `snakemake` workflow in the `benchmarks` directory, and thus `snakemake` should be installed beforehand (for HPC systems, also install `snakemake-executor-plugin-slurm` or another plugin compatible with your system type). 
+
+An Apptainer container definition `bench.def` that contains installs for `GATK`, `samtools`, `sambamba` and `samsampleX` is included. Build this container using `apptainer build bench.sif bench.def` before running the workflow.
+
+Configure the benchmarking parameters in `config.yaml` in the same directory: copy and rename an existing chunk with all its parameters and populate all parameters. All input files are expected to be found in the same directory as `config.yaml`, BAM files should be indexed using `samtools index`.
+
+```{yaml}
+# config.yaml
+benchmarks:             # all chunks should be children of this header
+  wgs-chr21:            # arbitrary name for benchmarking instance, parameters will be children
+    chr: "chr21"        # specify contig
+    start: 1            # region start coordinate
+    end: 46709982       # region end coordinate
+    seed: 42            # random seed (base)
+    n_replicates: 1     # replicate count, will affect seed 
+                        # (e.g. seed=42, n=3 will use seeds 43, 44, 45)
+    collapse: 0         # define smoothing during mapping step
+    templates:          # specify files to use as templates in sampling
+      - "template.bam"  # all files must be in the benchmarks directory
+
+    mode: "mean"        # how to determine per-position template depths from multiple template files
+    source: "source.bam" # specify file to downsample
+
+    coefficient: 0.1    # coefficient provided to GATK, samtools, sambamba
+
+    cpu: 1              # specify hardware resource (used by all steps)
+    mem_mb: 16384
+    time: "10:00"
+```
+
+A directory for all intermediate files will be created for each chunk defined in `config.yaml` and the final benchmark results will be made available in the `benchmarks` directory as `benchmark-{chunk_name}.tsv`.
 
 ## Acknowledgments
+- Built on [htslib](https://github.com/samtools/htslib)
 - Uses [xxHash](https://github.com/Cyan4973/xxHash) for fast hashing (BSD-2 license)
 - Uses [pbPlots](https://github.com/InductiveComputerScience/pbPlots) for plotting
-- Built on [htslib](https://github.com/samtools/htslib)
+- Uses [Snakemake](https://snakemake.github.io) for benchmarking
