@@ -25,6 +25,7 @@ benchmarks/*.bam
 benchmarks/*.bai
 benchmarks/*.tsv
 benchmarks/*.bed
+benchmarks/*.sif
 
 # Editor files
 *.swp
@@ -32,5 +33,5 @@ benchmarks/*.bed
 .vscode/
 
 # Virtual environment
-venv/
+venv-bench/
 

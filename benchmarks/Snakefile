@@ -3,7 +3,6 @@ configfile: "config.yaml"
 import os
 
 BENCHMARKS = list(config["benchmarks"].keys())
-SAMSAMPLEX = "../samsampleX"
 
 COMPARISON_TOOLS = [
     "gatk-high-accuracy",
@@ -37,13 +36,15 @@ rule all:
     input:
         expand("benchmark-{benchmark}.tsv", benchmark=BENCHMARKS)
 
-rule build_samsampleX:
-    output:
-        binary=SAMSAMPLEX,
-    shell:
-        """
-        cd .. && make
-        """
+# rule build_samsampleX:
+#     output:
+#         binary=SAMSAMPLEX,
+#     container:
+#         "bench.sif"
+#     shell:
+#         """
+#         cd .. && make
+#         """
 
 rule preprocess_source:
     input:
@@ -57,6 +58,8 @@ rule preprocess_source:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
         time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
     shell:
         """
         samtools view {input.bam} {params.region} -b -o {output.bam} && \
@@ -79,6 +82,8 @@ rule GATK_HighAccuracy:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
         time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
     shell:
         """
         gatk --java-options "-Xmx{resources.mem_mb}m" DownsampleSam \
@@ -105,6 +110,8 @@ rule GATK_ConstantMemory:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
         time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
     shell:
         """
         gatk --java-options "-Xmx{resources.mem_mb}m" DownsampleSam \
@@ -131,6 +138,8 @@ rule GATK_Chained:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
         time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
     shell:
         """
         gatk --java-options "-Xmx{resources.mem_mb}m" DownsampleSam \
@@ -157,10 +166,13 @@ rule samtools:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
         time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
     shell:
         """
         samtools view {input.bam} \
-        -s {wildcards.seed}.{params.coefficient} \
+        --subsample {params.coefficient} \
+        --subsample-seed {wildcards.seed} \
         -b -o {output.bam}
         """
 
@@ -180,11 +192,13 @@ rule sambamba:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
         time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
     shell:
         """
         sambamba view {input.bam} \
         -f bam \
-        -s {params.coefficient} \
+        --subsample {params.coefficient} \
         --subsampling-seed {wildcards.seed} \
         -o {output.bam}
         """
@@ -194,7 +208,6 @@ rule samsampleX_map:
         template=lambda wc: wc.template,
         source="{benchmark}/source.bam",
         source_index="{benchmark}/source.bam.bai",
-        binary=SAMSAMPLEX,
     params:
         region=lambda wc: get_region(wc.benchmark),
         collapse=lambda wc: get_config(wc.benchmark, "collapse"),
@@ -206,9 +219,11 @@ rule samsampleX_map:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
         time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
     shell:
         """
-        {input.binary} map \
+        samsampleX map \
         --template-bam {input.template} \
         --region {params.region} \
         --collapse {params.collapse} \
@@ -221,7 +236,6 @@ rule samsampleX_sampling:
         bam="{benchmark}/source.bam",
         index="{benchmark}/source.bam.bai",
         template_beds=lambda wc: get_template_beds(wc.benchmark),
-        binary=SAMSAMPLEX,
     params:
         mode=lambda wc: get_config(wc.benchmark, "mode"),
         region=lambda wc: get_region(wc.benchmark),
@@ -235,9 +249,11 @@ rule samsampleX_sampling:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
         time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
     shell:
         """
-        {input.binary} sample \
+        samsampleX sample \
         --source-bam {input.bam} \
         --template-bed {input.template_beds} \
         --out-bam {output.bam} \
@@ -248,7 +264,6 @@ rule samsampleX_sampling:
         --mode {params.mode}
         """
 
-### OUTPUT INDEXING
 rule index_output_bam:
     """Index output BAM files for stats comparison"""
     input:
@@ -257,6 +272,8 @@ rule index_output_bam:
         index="{benchmark}/{tool}.seed{seed}.bam.bai"
     wildcard_constraints:
         seed=r"\d+",
+    container:
+        "bench.sif"
     shell:
         """
         samtools index {input.bam}
@@ -268,7 +285,6 @@ rule compare_stats:
         tool_bam="{benchmark}/{tool}.seed{seed}.bam",
         tool_index="{benchmark}/{tool}.seed{seed}.bam.bai",
         template_bam=lambda wc: get_templates(wc.benchmark)[0],
-        binary=SAMSAMPLEX,
     params:
         region=lambda wc: get_region(wc.benchmark),
     wildcard_constraints:
@@ -279,9 +295,11 @@ rule compare_stats:
         cpus=1,
         mem_mb=4096,
         time="10:00",
+    container:
+        "bench.sif"
     shell:
         """
-        {input.binary} stats \
+        samsampleX stats \
             --bam-a {input.template_bam} \
             --bam-b {input.tool_bam} \
             --region {params.region} \
