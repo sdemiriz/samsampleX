@@ -92,7 +92,7 @@ def sample_run(
     template_beds: Sequence[str],
     region_str: str,
     out_bam: str = "out.bam",
-    mode: str = "min",
+    mode: str = "random",
     stat: str = "mean",
     seed: int = 42,
     no_sort: bool = False,

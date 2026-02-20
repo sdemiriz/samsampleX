@@ -40,9 +40,9 @@ def _add_sample_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--out-bam", default="out.bam", help="Output BAM file [default: out.bam]")
     p.add_argument(
         "--mode",
-        default="mean",
+        default="random",
         choices=("min", "max", "mean", "random"),
-        help="How to combine multiple templates [default: mean]",
+        help="How to combine multiple templates [default: random]",
     )
     p.add_argument(
         "--stat",
