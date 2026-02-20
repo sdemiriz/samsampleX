@@ -55,6 +55,24 @@ def _add_sample_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--no-metrics", action="store_true", help="Skip metrics calculation")
 
 
+def _add_plot_parser(subparsers: argparse._SubParsersAction) -> None:
+    p = subparsers.add_parser(
+        "plot",
+        help="Compare depth of coverage and output as PNG plot or TSV data",
+    )
+    p.add_argument("--source-bam", required=True, help="Source BAM file")
+    p.add_argument("--out-bam", required=True, help="Output BAM file (from sampling)")
+    p.add_argument("--region", required=True, help="Target region (samtools-style)")
+
+    tpl = p.add_mutually_exclusive_group(required=True)
+    tpl.add_argument("--template-bam", help="Template BAM file")
+    tpl.add_argument("--template-bed", help="Template BED file")
+
+    out = p.add_mutually_exclusive_group(required=True)
+    out.add_argument("--out-png", help="Output PNG plot file")
+    out.add_argument("--out-tsv", help="Output TSV data file")
+
+
 def _add_stats_parser(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser(
         "stats",
@@ -130,6 +148,20 @@ def _run_sample(args: argparse.Namespace) -> int:
     )
 
 
+def _run_plot(args: argparse.Namespace) -> int:
+    from .plot import plot_run
+
+    return plot_run(
+        source_bam=args.source_bam,
+        out_bam=args.out_bam,
+        region_str=args.region,
+        template_bam=args.template_bam,
+        template_bed=args.template_bed,
+        out_png=args.out_png,
+        out_tsv=args.out_tsv,
+    )
+
+
 def _run_stats(args: argparse.Namespace) -> int:
     from .depth import depth_from_bam, region_parse
     from .metrics import metrics_calculate, metrics_print
@@ -189,6 +221,7 @@ def main(argv: list[str] | None = None) -> None:
     subparsers = parser.add_subparsers(dest="command")
     _add_map_parser(subparsers)
     _add_sample_parser(subparsers)
+    _add_plot_parser(subparsers)
     _add_stats_parser(subparsers)
 
     args = parser.parse_args(argv)
@@ -200,6 +233,7 @@ def main(argv: list[str] | None = None) -> None:
     dispatch = {
         "map": _run_map,
         "sample": _run_sample,
+        "plot": _run_plot,
         "stats": _run_stats,
     }
 
