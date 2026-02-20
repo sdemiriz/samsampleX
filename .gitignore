@@ -1,3 +1,6 @@
+build/
+*egg-info/
+*/__pycache__/
 
 # Test files
 *.cram
