@@ -1,0 +1,79 @@
+benchmarks:
+  wgs-chr21:
+    chr: "chr21"
+    start: 1
+    end: 46709982
+    seed: 42
+    n_replicates: 10
+
+    collapse: 0
+    templates:
+      - "HG00157.bam"
+
+    mode: "mean"
+    source: "HG002.GRCh38.300x.bam"
+
+    coefficient: 0.1413351716 # 11002091/77843971 mapped reads
+
+    cpu: 1
+    mem_mb: 16384
+    time: "10:00"
+
+  wegs-8p5x-chr21:
+    chr: "chr21"
+    start: 1
+    end: 46709982
+    seed: 42
+    n_replicates: 10
+
+    collapse: 0
+    templates:
+      - "HG002-WEGS-8P5X-R1.bam"
+
+    mode: "mean"
+    source: "HG002.GRCh38.300x.bam"
+
+    coefficient: 0.04268109601 # 3322466/77843971 mapped reads
+
+    cpu: 1
+    mem_mb: 16384
+    time: "10:00"
+
+  wgs-hla-a:
+    chr: "chr6"
+    start: 29941260
+    end: 29949572
+    seed: 42
+    n_replicates: 10
+
+    collapse: 0
+    templates:
+      - "HG00157.bam"
+    mode: "mean"
+    source: "HG002.GRCh38.300x.bam"
+
+    coefficient: 0.09218636093 # 1391/15089 mapped reads
+
+    cpu: 1
+    mem_mb: 16384
+    time: "10:00"
+
+  wegs-8p5x-hla-a:
+    chr: "chr6"
+    start: 29941260
+    end: 29949572
+    seed: 42
+    n_replicates: 10
+
+    collapse: 0
+    templates:
+      - "HG002-WEGS-8P5X-R1.bam"
+
+    mode: "mean"
+    source: "HG002.GRCh38.300x.bam"
+
+    coefficient: 0.05414540394 # 817/15089
+
+    cpu: 1
+    mem_mb: 16384
+    time: "10:00"

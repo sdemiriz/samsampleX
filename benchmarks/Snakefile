@@ -1,0 +1,581 @@
+configfile: "config.yaml"
+
+import os
+
+BENCHMARKS = list(config["benchmarks"].keys())
+
+COMPARISON_TOOLS = [
+    "gatk-high-accuracy",
+    "gatk-constant-memory",
+    "gatk-chained",
+    "samtools",
+    "sambamba",
+    "samsampleX-sample"
+]
+
+def get_config(benchmark, key):
+    return config["benchmarks"][benchmark][key]
+
+def get_seeds(benchmark):
+    cfg = config["benchmarks"][benchmark]
+    return [cfg["seed"] + i for i in range(1, cfg["n_replicates"] + 1)]
+
+def get_region(benchmark):
+    cfg = config["benchmarks"][benchmark]
+    return f"{cfg['chr']}:{cfg['start']}-{cfg['end']}"
+
+def get_templates(benchmark):
+    return config["benchmarks"][benchmark]["templates"]
+
+def get_template_beds(benchmark):
+    templates = get_templates(benchmark)
+    return [f"{benchmark}/{t}.bed" for t in templates]
+
+
+rule all:
+    input:
+        expand("benchmark-{benchmark}.tsv", benchmark=BENCHMARKS)
+
+# rule build_samsampleX:
+#     output:
+#         binary=SAMSAMPLEX,
+#     container:
+#         "bench.sif"
+#     shell:
+#         """
+#         cd .. && make
+#         """
+
+rule preprocess_source:
+    input:
+        bam=lambda wc: get_config(wc.benchmark, "source"),
+    output:
+        bam="{benchmark}/source.bam",
+        index="{benchmark}/source.bam.bai",
+    params:
+        region=lambda wc: get_region(wc.benchmark),
+    resources:
+        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
+        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
+        time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
+    shell:
+        """
+        samtools view {input.bam} {params.region} -b -o {output.bam} && \
+        samtools index {output.bam}
+        """
+
+rule GATK_HighAccuracy:
+    input:
+        bam="{benchmark}/source.bam",
+        index="{benchmark}/source.bam.bai",
+    params:
+        coefficient=lambda wc: get_config(wc.benchmark, "coefficient"),
+    wildcard_constraints:
+        seed=r"\d+",
+    output:
+        bam="{benchmark}/gatk-high-accuracy.seed{seed}.bam",
+    benchmark:
+        "{benchmark}/benchmarks/gatk-high-accuracy.seed{seed}.tsv"
+    resources:
+        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
+        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
+        time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
+    shell:
+        """
+        gatk --java-options "-Xmx{resources.mem_mb}m" DownsampleSam \
+        -S HighAccuracy \
+        -P {params.coefficient} \
+        -R {wildcards.seed} \
+        -I {input.bam} \
+        -O {output.bam}
+        """
+
+rule GATK_ConstantMemory:
+    input:
+        bam="{benchmark}/source.bam",
+        index="{benchmark}/source.bam.bai",
+    params:
+        coefficient=lambda wc: get_config(wc.benchmark, "coefficient"),
+    wildcard_constraints:
+        seed=r"\d+",
+    output:
+        bam="{benchmark}/gatk-constant-memory.seed{seed}.bam",
+    benchmark:
+        "{benchmark}/benchmarks/gatk-constant-memory.seed{seed}.tsv"
+    resources:
+        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
+        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
+        time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
+    shell:
+        """
+        gatk --java-options "-Xmx{resources.mem_mb}m" DownsampleSam \
+        -S ConstantMemory \
+        -P {params.coefficient} \
+        -R {wildcards.seed} \
+        -I {input.bam} \
+        -O {output.bam}
+        """
+
+rule GATK_Chained:
+    input:
+        bam="{benchmark}/source.bam",
+        index="{benchmark}/source.bam.bai",
+    params:
+        coefficient=lambda wc: get_config(wc.benchmark, "coefficient"),
+    wildcard_constraints:
+        seed=r"\d+",
+    output:
+        bam="{benchmark}/gatk-chained.seed{seed}.bam",
+    benchmark:
+        "{benchmark}/benchmarks/gatk-chained.seed{seed}.tsv"
+    resources:
+        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
+        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
+        time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
+    shell:
+        """
+        gatk --java-options "-Xmx{resources.mem_mb}m" DownsampleSam \
+        -S Chained \
+        -P {params.coefficient} \
+        -R {wildcards.seed} \
+        -I {input.bam} \
+        -O {output.bam}
+        """
+
+rule samtools:
+    input:
+        bam="{benchmark}/source.bam",
+        index="{benchmark}/source.bam.bai",
+    params:
+        coefficient=lambda wc: get_config(wc.benchmark, "coefficient"),
+    wildcard_constraints:
+        seed=r"\d+",
+    output:
+        bam="{benchmark}/samtools.seed{seed}.bam",
+    benchmark:
+        "{benchmark}/benchmarks/samtools.seed{seed}.tsv"
+    resources:
+        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
+        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
+        time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
+    shell:
+        """
+        samtools view {input.bam} \
+        --subsample {params.coefficient} \
+        --subsample-seed {wildcards.seed} \
+        -b -o {output.bam}
+        """
+
+rule sambamba:
+    input:
+        bam="{benchmark}/source.bam",
+        index="{benchmark}/source.bam.bai",
+    params:
+        coefficient=lambda wc: get_config(wc.benchmark, "coefficient"),
+    wildcard_constraints:
+        seed=r"\d+",
+    output:
+        bam="{benchmark}/sambamba.seed{seed}.bam",
+    benchmark:
+        "{benchmark}/benchmarks/sambamba.seed{seed}.tsv"
+    resources:
+        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
+        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
+        time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
+    shell:
+        """
+        sambamba view {input.bam} \
+        -f bam \
+        --subsample {params.coefficient} \
+        --subsampling-seed {wildcards.seed} \
+        -o {output.bam}
+        """
+
+rule samsampleX_map:
+    input:
+        template=lambda wc: wc.template,
+        source="{benchmark}/source.bam",
+        source_index="{benchmark}/source.bam.bai",
+    params:
+        region=lambda wc: get_region(wc.benchmark),
+        collapse=lambda wc: get_config(wc.benchmark, "collapse"),
+    output:
+        bed="{benchmark}/{template}.bed",
+    benchmark:
+        "{benchmark}/benchmarks/samsampleX-map.{template}.tsv"
+    resources:
+        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
+        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
+        time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
+    shell:
+        """
+        samsampleX map \
+        --template-bam {input.template} \
+        --region {params.region} \
+        --collapse {params.collapse} \
+        --out-bed {output.bed}
+        """
+
+rule samsampleX_sampling:
+    """Downsample using samsampleX with multiple template BEDs"""
+    input:
+        bam="{benchmark}/source.bam",
+        index="{benchmark}/source.bam.bai",
+        template_beds=lambda wc: get_template_beds(wc.benchmark),
+    params:
+        mode=lambda wc: get_config(wc.benchmark, "mode"),
+        region=lambda wc: get_region(wc.benchmark),
+    wildcard_constraints:
+        seed=r"\d+",
+    output:
+        bam="{benchmark}/samsampleX-sample.seed{seed}.bam",
+    benchmark:
+        "{benchmark}/benchmarks/samsampleX-sample.seed{seed}.tsv"
+    resources:
+        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
+        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
+        time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
+    shell:
+        """
+        samsampleX sample \
+        --source-bam {input.bam} \
+        --template-bed {input.template_beds} \
+        --out-bam {output.bam} \
+        --no-sort \
+        --no-metrics \
+        --region {params.region} \
+        --seed {wildcards.seed} \
+        --mode {params.mode}
+        """
+
+rule index_output_bam:
+    """Index output BAM files for stats comparison"""
+    input:
+        bam="{benchmark}/{tool}.seed{seed}.bam"
+    output:
+        index="{benchmark}/{tool}.seed{seed}.bam.bai"
+    wildcard_constraints:
+        seed=r"\d+",
+    container:
+        "bench.sif"
+    shell:
+        """
+        samtools index {input.bam}
+        """
+
+rule compare_stats:
+    """Compare tool output against first template BAM using samsampleX stats"""
+    input:
+        tool_bam="{benchmark}/{tool}.seed{seed}.bam",
+        tool_index="{benchmark}/{tool}.seed{seed}.bam.bai",
+        template_bam=lambda wc: get_templates(wc.benchmark)[0],
+    params:
+        region=lambda wc: get_region(wc.benchmark),
+    wildcard_constraints:
+        seed=r"\d+",
+    output:
+        stats="{benchmark}/{tool}.seed{seed}.stats"
+    resources:
+        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
+        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
+        time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
+    shell:
+        """
+        samsampleX stats \
+            --bam-a {input.template_bam} \
+            --bam-b {input.tool_bam} \
+            --region {params.region} \
+            2> {output.stats}
+        """
+
+def get_all_benchmark_files(benchmark, pattern):
+    seeds = get_seeds(benchmark)
+    return [pattern.format(benchmark=benchmark, seed=s) for s in seeds]
+
+rule results:
+    input:
+        benchmarks=lambda wc: [
+            f"{wc.benchmark}/benchmarks/{tool}.seed{seed}.tsv"
+            for tool in COMPARISON_TOOLS
+            for seed in get_seeds(wc.benchmark)
+        ] + [
+            f"{wc.benchmark}/benchmarks/samsampleX-map.{t}.tsv"
+            for t in get_templates(wc.benchmark)
+        ],
+    output:
+        results="{benchmark}/results.tsv"
+    run:
+        def parse_benchmark(filepath):
+            """Parse Snakemake benchmark TSV file"""
+            with open(filepath) as f:
+                header = f.readline().strip().split('\t')
+                values = f.readline().strip().split('\t')
+            return dict(zip(header, values))
+        
+        results = []
+        seeds = get_seeds(wildcards.benchmark)
+        
+        for tool in COMPARISON_TOOLS:
+            for seed in seeds:
+                path = f"{wildcards.benchmark}/benchmarks/{tool}.seed{seed}.tsv"
+                data = parse_benchmark(path)
+                data["tool"] = tool
+                data["seed"] = str(seed)
+                results.append(data)
+        
+        # Add samsampleX_map entries (one per template)
+        for template in get_templates(wildcards.benchmark):
+            path = f"{wildcards.benchmark}/benchmarks/samsampleX-map.{template}.tsv"
+            data = parse_benchmark(path)
+            data["tool"] = f"samsampleX-map ({template})"
+            data["seed"] = "NA"
+            results.append(data)
+        
+        headers = ["s", "h:m:s", "max_rss", "max_vms", "max_uss", "max_pss", "io_in", "io_out", "mean_load", "cpu_time"]
+        
+        with open(output.results, 'w') as out:
+            out.write('\t'.join(['tool', 'seed'] + headers) + '\n')
+            for data in results:
+                row = [data.get("tool", ""), data.get("seed", "")] + [data.get(h, '') for h in headers]
+                out.write('\t'.join(row) + '\n')
+
+
+rule results_summary:
+    input:
+        results="{benchmark}/results.tsv"
+    output:
+        summary="{benchmark}/results_summary.tsv"
+    run:
+        import statistics
+        
+        def parse_numeric(val):
+            if not val or val == "NA":
+                return None
+            try:
+                return float(val)
+            except ValueError:
+                return None
+        
+        with open(input.results) as f:
+            header = f.readline().strip().split('\t')
+            rows = [line.strip().split('\t') for line in f if line.strip()]
+        
+        tool_data = {}
+        for row in rows:
+            row_dict = dict(zip(header, row))
+            tool = row_dict['tool']
+            if tool not in tool_data:
+                tool_data[tool] = []
+            tool_data[tool].append(row_dict)
+        
+        numeric_cols = ["s", "max_rss", "max_vms", "max_uss", "max_pss", "io_in", "io_out", "mean_load", "cpu_time"]
+        
+        summary_rows = []
+        for tool, reps in tool_data.items():
+            summary = {'tool': tool, 'n_replicates': len(reps)}
+            
+            for col in numeric_cols:
+                values = [parse_numeric(r.get(col, '')) for r in reps]
+                values = [v for v in values if v is not None]
+                
+                if values:
+                    summary[f'{col}_mean'] = f"{statistics.mean(values):.4f}"
+                    summary[f'{col}_std'] = f"{statistics.stdev(values):.4f}" if len(values) > 1 else "NA"
+                else:
+                    summary[f'{col}_mean'] = "NA"
+                    summary[f'{col}_std'] = "NA"
+            
+            summary_rows.append(summary)
+        
+        if summary_rows:
+            summary_headers = list(summary_rows[0].keys())
+            with open(output.summary, 'w') as out:
+                out.write('\t'.join(summary_headers) + '\n')
+                for row in summary_rows:
+                    out.write('\t'.join(str(row.get(h, '')) for h in summary_headers) + '\n')
+
+
+rule stats_summary:
+    input:
+        stats=lambda wc: [
+            f"{wc.benchmark}/{tool}.seed{seed}.stats"
+            for tool in COMPARISON_TOOLS
+            for seed in get_seeds(wc.benchmark)
+        ],
+    output:
+        summary="{benchmark}/stats_summary.tsv"
+    run:
+        import re
+        import statistics
+        
+        def parse_stats_file(filepath):
+            data = {}
+            with open(filepath) as f:
+                for line in f:
+                    line = line.strip()
+                    if "Mean Depth (BAM A):" in line:
+                        match = re.search(r'([\d.]+)\s*$', line)
+                        if match:
+                            data['mean_depth_template'] = float(match.group(1))
+                    elif "Mean Depth (BAM B):" in line:
+                        match = re.search(r'([\d.]+)\s*$', line)
+                        if match:
+                            data['mean_depth_tool'] = float(match.group(1))
+                    elif "Total Variation:" in line:
+                        match = re.search(r'([\d.]+)\s*$', line)
+                        if match:
+                            data['tv'] = float(match.group(1))
+                    elif "Wasserstein-1" in line:
+                        match = re.search(r'([\d.]+)\s*$', line)
+                        if match:
+                            data['wasserstein'] = float(match.group(1))
+            return data
+        
+        seeds = get_seeds(wildcards.benchmark)
+        tool_results = {tool: [] for tool in COMPARISON_TOOLS}
+        
+        for tool in COMPARISON_TOOLS:
+            for seed in seeds:
+                filepath = f"{wildcards.benchmark}/{tool}.seed{seed}.stats"
+                data = parse_stats_file(filepath)
+                if data:
+                    tool_results[tool].append(data)
+        
+        summary_rows = []
+        metrics = ['tv', 'wasserstein', 'mean_depth_tool']
+        
+        for tool in COMPARISON_TOOLS:
+            results = tool_results[tool]
+            if not results:
+                continue
+            
+            row = {'tool': tool}
+            
+            for metric in metrics:
+                values = [r.get(metric) for r in results if r.get(metric) is not None]
+                if values:
+                    row[f'{metric}_mean'] = statistics.mean(values)
+                    row[f'{metric}_std'] = statistics.stdev(values) if len(values) > 1 else 0.0
+                else:
+                    row[f'{metric}_mean'] = 'NA'
+                    row[f'{metric}_std'] = 'NA'
+            
+            summary_rows.append(row)
+        
+        headers = ['tool', 'tv_mean', 'tv_std', 'wasserstein_mean', 'wasserstein_std', 
+                   'mean_depth_tool_mean', 'mean_depth_tool_std']
+        
+        with open(output.summary, 'w') as out:
+            out.write('\t'.join(headers) + '\n')
+            for row in summary_rows:
+                values = []
+                for h in headers:
+                    val = row.get(h, 'NA')
+                    if isinstance(val, float):
+                        values.append(f"{val:.6f}")
+                    else:
+                        values.append(str(val))
+                out.write('\t'.join(values) + '\n')
+
+
+rule consolidated_summary:
+    input:
+        runtime="{benchmark}/results_summary.tsv",
+        accuracy="{benchmark}/stats_summary.tsv"
+    output:
+        consolidated="benchmark-{benchmark}.tsv"
+    run:
+        runtime_data = {}
+        with open(input.runtime) as f:
+            header = f.readline().strip().split('\t')
+            col_idx = {h: i for i, h in enumerate(header)}
+            for line in f:
+                if not line.strip():
+                    continue
+                fields = line.strip().split('\t')
+                tool = fields[0]
+                if "samsampleX-map" in tool:
+                    continue
+                
+                wall_mean = fields[col_idx.get('s_mean', -1)]
+                wall_std = fields[col_idx.get('s_std', -1)]
+                mem_mean = fields[col_idx.get('max_rss_mean', -1)]
+                mem_std = fields[col_idx.get('max_rss_std', -1)]
+                
+                try:
+                    mem_mean_gb = float(mem_mean) / 1000
+                    mem_std_gb = float(mem_std) / 1000 if mem_std != "NA" else 0
+                except (ValueError, TypeError):
+                    mem_mean_gb = 0
+                    mem_std_gb = 0
+                
+                runtime_data[tool] = {
+                    'wall_mean': wall_mean,
+                    'wall_std': wall_std,
+                    'mem_mean_gb': mem_mean_gb,
+                    'mem_std_gb': mem_std_gb,
+                }
+        
+        accuracy_data = {}
+        with open(input.accuracy) as f:
+            header = f.readline().strip().split('\t')
+            col_idx = {h: i for i, h in enumerate(header)}
+            for line in f:
+                if not line.strip():
+                    continue
+                fields = line.strip().split('\t')
+                tool = fields[0]
+                
+                accuracy_data[tool] = {
+                    'tv_mean': fields[col_idx.get('tv_mean', -1)],
+                    'tv_std': fields[col_idx.get('tv_std', -1)],
+                    'w1_mean': fields[col_idx.get('wasserstein_mean', -1)],
+                    'w1_std': fields[col_idx.get('wasserstein_std', -1)],
+                }
+        
+        with open(output.consolidated, 'w') as out:
+            out.write("Tool\tWall Clock (s)\tMemory (GB)\tTV\tNorm. W1\n")
+            
+            sorted_tools = sorted(runtime_data.keys(), 
+                                  key=lambda t: float(runtime_data[t]['wall_mean']) if runtime_data[t]['wall_mean'] not in ['NA', ''] else 999)
+            
+            for tool in sorted_tools:
+                rt = runtime_data[tool]
+                acc = accuracy_data.get(tool, {})
+                
+                try:
+                    wall_str = f"{float(rt['wall_mean']):.2f} ± {float(rt['wall_std']):.2f}"
+                except (ValueError, TypeError):
+                    wall_str = f"{rt['wall_mean']} ± {rt['wall_std']}"
+                
+                mem_str = f"{rt['mem_mean_gb']:.2f} ± {rt['mem_std_gb']:.2f}"
+                
+                try:
+                    tv_str = f"{float(acc.get('tv_mean', 'NA')):.4f} ± {float(acc.get('tv_std', 'NA')):.4f}"
+                except (ValueError, TypeError):
+                    tv_str = "NA"
+                
+                try:
+                    w1_str = f"{float(acc.get('w1_mean', 'NA')):.4f} ± {float(acc.get('w1_std', 'NA')):.4f}"
+                except (ValueError, TypeError):
+                    w1_str = "NA"
+                
+                out.write(f"{tool}\t{wall_str}\t{mem_str}\t{tv_str}\t{w1_str}\n")

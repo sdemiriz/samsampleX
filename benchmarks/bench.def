@@ -1,0 +1,92 @@
+Bootstrap: docker
+From: ubuntu:25.10
+
+%labels
+    Benchmarking container for samsampleX
+
+%environment
+    export PATH=/opt/samtools/bin:/opt/sambamba:/opt/gatk:/opt/samsampleX:$PATH
+    export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+
+%post
+    set -e
+    export DEBIAN_FRONTEND=noninteractive 
+    export TZ=America/New_York 
+    
+    apt-get update && apt-get install -y tzdata \
+        wget \
+        curl \
+        unzip \
+        bzip2 \
+        ca-certificates \
+        build-essential \
+        zlib1g-dev \
+        libbz2-dev \
+        liblzma-dev \
+        libncurses-dev \
+        libcurl4-openssl-dev \
+        libdeflate-dev \
+        openjdk-17-jre-headless \
+        python3 \
+        python3-pip \
+        automake \
+        make \
+        gcc \
+        perl \
+        git \
+        python-is-python3
+    rm -rf /var/lib/apt/lists/*
+
+    cd /opt
+    wget https://github.com/broadinstitute/gatk/releases/download/4.6.2.0/gatk-4.6.2.0.zip
+    unzip gatk-4.6.2.0.zip
+    mv gatk-4.6.2.0 gatk
+    chmod +x /opt/gatk
+    ln -s /opt/gatk/gatk /usr/local/bin/gatk
+    gatk --version
+
+    mkdir -p /opt/samtools
+    cd /opt
+    wget https://github.com/samtools/samtools/releases/download/1.23/samtools-1.23.tar.bz2
+    tar -xjf samtools-1.23.tar.bz2
+    cd samtools-1.23
+    ./configure --prefix=/opt/samtools
+    make
+    make install
+    ln -s /opt/samtools/bin/samtools /usr/local/bin/samtools
+    samtools --version
+
+    cd /opt
+    wget https://github.com/biod/sambamba/releases/download/v1.0.1/sambamba-1.0.1-linux-amd64-static.gz
+    gunzip sambamba-1.0.1-linux-amd64-static.gz
+    mv sambamba-1.0.1-linux-amd64-static sambamba
+    chmod +x sambamba
+    ln -s /opt/sambamba /usr/local/bin/sambamba
+    sambamba --version
+
+    cd /opt
+    wget https://github.com/samtools/htslib/releases/download/1.23/htslib-1.23.tar.bz2
+    tar -xjf htslib-1.23.tar.bz2
+    cd htslib-1.23
+    ./configure --prefix=/opt/htslib
+    make
+    make install
+    ln -s /opt/htslib/include/htslib /usr/local/include/htslib
+    ln -s /opt/htslib/lib/libhts.* /usr/local/lib/
+    ldconfig
+
+    # cd /opt
+    # git clone https://github.com/sdemiriz/samsampleX.git
+    # cd samsampleX
+    # make HTSDIR=/opt/htslib
+    # make install PREFIX=/opt/samsampleX
+    # ln -s /opt/samsampleX/samsampleX /usr/local/bin/samsampleX
+    # chmod +x samsampleX /usr/local/bin/samsampleX
+    # pwd
+    # ls -lah ..
+    # samsampleX --help
+
+    git clone https://github.com/sdemiriz/samsampleX.git
+    cd samsampleX
+    pip install .
+    samsampleX --help
