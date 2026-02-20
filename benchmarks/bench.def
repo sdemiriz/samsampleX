@@ -5,7 +5,7 @@ From: ubuntu:25.10
     Benchmarking container for samsampleX
 
 %environment
-    export PATH=/opt/samtools/bin:/opt/sambamba:/opt/gatk:/opt/samsampleX:$PATH
+    export PATH=/opt/venv/bin:/opt/samtools/bin:/opt/sambamba:/opt/gatk:/opt/samsampleX:$PATH
     export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
 %post
@@ -29,6 +29,7 @@ From: ubuntu:25.10
         openjdk-17-jre-headless \
         python3 \
         python3-pip \
+        python3.13-venv \
         automake \
         make \
         gcc \
@@ -85,6 +86,11 @@ From: ubuntu:25.10
     # pwd
     # ls -lah ..
     # samsampleX --help
+
+
+    python -m venv /opt/venv
+    . /opt/venv/bin/activate
+    pip install pysam numpy xxhash matplotlib
 
     git clone https://github.com/sdemiriz/samsampleX.git
     cd samsampleX

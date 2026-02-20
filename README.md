@@ -16,6 +16,7 @@ A Python-based tool for customizable BAM file downsampling. Sample reads from a 
 - pysam
 - xxHash
 - numpy
+- matplotlib
 - Snakemake (benchmarking only)
 
 ### Build samsampleX
