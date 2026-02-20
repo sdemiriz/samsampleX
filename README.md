@@ -18,6 +18,7 @@ A Python-based tool for customizable BAM file downsampling. Sample reads from a 
 - numpy
 - matplotlib
 - Snakemake (benchmarking only)
+- pytest (testing only)
 
 ### Build samsampleX
 ```bash
@@ -58,9 +59,11 @@ samsampleX sample \
 | `--template-bed FILE` | Template BED file(s) (>=1 required) | - |
 | `--region REGION` | Target region, samtools-style (required) | - |
 | `--out-bam FILE` | Output BAM file | `out.bam` |
-| `--mode MODE` | Combine mode: `min`, `max`, `mean`, `random` | `random` |
+| `--mode MODE` | Combine mode for multiple templates: `min`, `max`, `mean`, `random` | `random` |
+| `--stat STAT` | Statistic for summarising ratio over read span: `mean`, `min`, `max`, `median` | `mean` |
 | `--seed INT` | Random seed for reproducibility | `42` |
 | `--no-sort` | Skip sorting and indexing output | false |
+| `--no-metrics` | Skip metrics calculation after sampling | false |
 
 ### Plotting
 Compare depth of coverage between source, template, and output BAM files. Output either as PNG plot or TSV data.
@@ -88,25 +91,27 @@ samsampleX plot \
 | `--out-png FILE` | Output PNG plot (mutually exclusive with --out-tsv) | - |
 | `--out-tsv FILE` | Output TSV data (mutually exclusive with --out-png) | - |
 
-## Testing
+### Stats
+Compare depth distributions between two BAM files over a given region. Reports mean depth for each BAM, Total Variation distance, and normalised Wasserstein-1 distance.
 ```bash
-# All tests
-make test
-
-# Unit tests
-make test-unit
-
-# Integration tests
-make test-integration
+samsampleX stats \
+    --bam-a template.bam \
+    --bam-b sampled.bam \
+    --region chr1:1000-2000
 ```
 
-### Coverage
-| Test File | Description |
-|-----------|-------------|
-| `test_parsing.c` | Region string parsing, combine mode parsing |
-| `test_depth.c` | Depth array allocation, combine operations |
-| `test_metrics.c` | Total Variation, Wasserstein distance calculations |
-| `integration_tests.sh` | CLI help, subcommand arguments, error handling |
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--bam-a FILE` | First BAM file, e.g. reference/template (required) | - |
+| `--bam-b FILE` | Second BAM file, e.g. sampled output (required) | - |
+| `--region REGION` | Target region, samtools-style (required) | - |
+
+## Testing
+
+A `pytest` test suite is available. Run using the `-v` flag for a detailed report.
+```bash
+pytest -v
+```
 
 ## Algorithm rundown
 
@@ -117,16 +122,18 @@ make test-integration
 4. Optionally collapse consecutive similar depths (`--collapse`)
 
 ### Sampling
-1. Load template depths from BED file(s)
+1. Load template depths from BED file(s); if multiple templates are provided, combine them per-position using the selected `--mode`
 2. Compute source depths from BAM
-3. Calculate $ratio_{depth}= depth_{template} / depth_{source}$
-    - Sample all reads if $ratio_{depth} > 1.0$
-4. For each read:
-   - Hash read name to a fraction $f_{read}$ in [0, 1)
-   - Compute read's mean ratio based on covered positions $\mu(ratio_{depth}) = \sum_{i}^{i+l_{read}} ratio_{depth}(i) / l_{read}$
-   - Select and sample read if $\mu(ratio_{depth}) < f_{read}$
-5. Sort and index output BAM
-6. Report metrics (Total Variation, Wasserstein distance 1)
+3. Calculate per-position sampling ratio: $ratio(i) = \min(1,\; depth_{template}(i) \;/\; depth_{source}(i))$
+   - Positions where the template depth meets or exceeds the source depth get ratio 1.0 (keep all reads)
+   - Positions with zero source depth get ratio 0.0
+4. Build a cumulative sum of the ratio array for O(1) range queries
+5. For each read in the source BAM:
+   - Hash read name with xxHash32 to produce a deterministic fraction $f_{read} \in [0, 1)$
+   - Summarise the ratio over the read's covered positions using `--stat` (default: mean via cumsum lookup)
+   - Keep the read if $f_{read} < ratio_{read}$
+6. Sort and index output BAM (unless `--no-sort`)
+7. Report metrics: Total Variation and Wasserstein-1 distance (unless `--no-metrics`)
 
 ## Metrics
 | Metric | Significance |
