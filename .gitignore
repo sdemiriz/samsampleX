@@ -1,0 +1,29 @@
+
+# Test files
+*.cram
+*.crai
+*.bam
+*.bai
+*.bed
+*.tsv
+*.png
+*.sh
+
+# Benchmark outputs
+benchmarks/.snakemake/
+benchmarks/*.stats
+benchmarks/*.log
+benchmarks/*.bam
+benchmarks/*.bai
+benchmarks/*.tsv
+benchmarks/*.bed
+benchmarks/*.sif
+
+# Editor files
+*.swp
+*~
+.vscode/
+
+# Virtual environment
+venv-bench/
+
