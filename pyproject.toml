@@ -5,10 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "samsampleX"
 version = "0.1.0"
-description = "Depth-aware BAM file sampling (Python port of samsampleX)"
+description = "Depth-aware BAM file sampling"
 requires-python = ">=3.9"
 dependencies = [
     "xxhash",
+    "pysam",
+    "numpy",
+    "matplotlib"
 ]
 
 [project.scripts]

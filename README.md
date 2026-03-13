@@ -91,6 +91,36 @@ samsampleX plot \
 | `--out-png FILE` | Output PNG plot (mutually exclusive with --out-tsv) | - |
 | `--out-tsv FILE` | Output TSV data (mutually exclusive with --out-png) | - |
 
+### Mapback
+Remap HLA\*LA PRG-mapped reads back to canonical chr6 coordinates. This is a preprocessing step for BAM files produced by HLA\*LA, which maps reads to a pangenome reference graph (PRG) with synthetic contig names (`PRG_1`, `PRG_2`, ...). The mapback subcommand translates these back to chr6 positions using the HLA\*LA `sequences.txt` file and known HLA gene / alt contig boundaries.
+
+The output BAM can then be used as input to `sample` for depth-aware downsampling on chr6.
+
+```bash
+# Step 1: remap PRG reads to chr6
+samsampleX mapback \
+    --source-bam hlala_output.bam \
+    --region chr6:28000000-34000000 \
+    --genome-build GRCh38 \
+    --out-bam remapped.bam
+
+# Step 2: sample from the remapped BAM
+samsampleX sample \
+    --source-bam remapped.bam \
+    --template-bed template.bed \
+    --region chr6:28000000-34000000 \
+    --out-bam sampled.bam
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--source-bam FILE` | HLA\*LA-remapped BAM file (required) | - |
+| `--region REGION` | Target region on chr6, samtools-style (required) | - |
+| `--out-bam FILE` | Output BAM file | `out.mapback.bam` |
+| `--genome-build BUILD` | Reference genome build: `GRCh38` or `GRCh37` (required) | - |
+| `--prg-seq FILE` | Path to HLA\*LA `sequences.txt` | `HLA-LA/graphs/PRG_MHC_GRCh38_withIMGT/sequences.txt` |
+| `--no-sort` | Skip sorting and indexing output | false |
+
 ### Stats
 Compare depth distributions between two BAM files over a given region. Reports mean depth for each BAM, Total Variation distance, and normalised Wasserstein-1 distance.
 ```bash

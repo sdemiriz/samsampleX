@@ -69,4 +69,3 @@ def metrics_print(result: MetricsResult, label_a: str = "A", label_b: str = "B")
     """Print metrics to stderr."""
     print(f"Total Variation:         {result.tv:.4f}", file=sys.stderr)
     print(f"Norm. Wasserstein Dist.: {result.wasserstein:.6f}", file=sys.stderr)
-    print("=" * 39, file=sys.stderr)

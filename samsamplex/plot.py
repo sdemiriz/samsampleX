@@ -14,11 +14,10 @@ from .depth import DepthArray
 # Larger regions use progressively coarser sampling.
 DOWNSAMPLE_TIERS = [
     (10_000, 1),        # <= 10 kb: every base
-    (100_000, 10),      # <= 100 kb: every 10th base
-    (1_000_000, 100),   # <= 1 Mb: every 100th base
-    (10_000_000, 1000), # <= 10 Mb: every 1000th base
+    (1_000_000, 10),   # <= 1 Mb: every 10th base
+    (10_000_000, 100), # <= 10 Mb: every 100th base
 ]
-DOWNSAMPLE_FALLBACK_STEP = 5000  # > 10 Mb
+DOWNSAMPLE_FALLBACK_STEP = 500  # > 10 Mb
 
 
 def _pick_step(n_positions: int) -> int:
@@ -76,6 +75,7 @@ def write_png(
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    import matplotlib.ticker as mticker
 
     positions = np.arange(source.length)
     ds_pos, ds_src, ds_tpl, ds_out = _downsample(
@@ -83,16 +83,50 @@ def write_png(
     )
 
     genomic_pos = ds_pos + region_start
+    region_end = region_start + source.length
 
-    fig, ax = plt.subplots(figsize=(12, 5))
-    ax.plot(genomic_pos, ds_src, linewidth=0.6, alpha=0.8, color="#3366cc", label="Source")
-    ax.plot(genomic_pos, ds_tpl, linewidth=0.6, alpha=0.8, color="#33aa55", label="Template")
-    ax.plot(genomic_pos, ds_out, linewidth=0.6, alpha=0.8, color="#cc3333", label="Output")
+    # Match Plotter.py styling
+    plt.rcParams["font.family"] = "sans-serif"
+    plt.rcParams["font.sans-serif"] = ["Arial", "Helvetica", "DejaVu Sans"]
 
+    fig, ax = plt.subplots(figsize=(8, 5), layout="constrained")
+
+    colors = {"Source": "#66c2a5", "Template": "#fc8d62", "Output": "#8da0cb"}
+    for label, y_data, color in [
+        ("Source", ds_src, colors["Source"]),
+        ("Template", ds_tpl, colors["Template"]),
+        ("Output", ds_out, colors["Output"]),
+    ]:
+        ax.plot(genomic_pos, y_data, label=label, color=color, linewidth=1)
+        ax.fill_between(genomic_pos, y_data, alpha=0.3, color=color)
+
+    # Remove top, right, left spines (keep bottom)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+
+    # Horizontal grid lines
+    ax.set_axisbelow(True)
+    ax.grid(True, which="major", axis="y", color="gray", alpha=0.5, linestyle="-", linewidth=1)
+
+    ax.tick_params(axis="y", length=0)
     ax.set_xlabel(f"Position on {region_contig}")
     ax.set_ylabel("Depth")
-    ax.set_title("Depth of Coverage Comparison")
-    ax.legend(loc="upper right", fontsize="small")
+    ax.set_title("Depth of coverage")
+
+    # Custom x-axis formatter for large values (e.g. millions)
+    def _custom_formatter(x, pos):
+        return f"{x/1e6:.3f}m" if x >= 1e6 else f"{x:.0f}"
+
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(_custom_formatter))
+    ax.xaxis.set_major_locator(mticker.LinearLocator(numticks=5))
+
+    # Figure-level legend at bottom center
+    handles, labels = ax.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=len(handles), frameon=False)
+
+    # Region coordinates at bottom left
+    fig.text(0, -0.05, f"{region_contig}:{region_start+1:,}-{region_end:,}", fontsize=10, va="bottom", ha="left")
 
     if step > 1:
         ax.annotate(
@@ -103,8 +137,7 @@ def write_png(
             color="grey",
         )
 
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 

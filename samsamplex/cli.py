@@ -73,6 +73,29 @@ def _add_plot_parser(subparsers: argparse._SubParsersAction) -> None:
     out.add_argument("--out-tsv", help="Output TSV data file")
 
 
+def _add_mapback_parser(subparsers: argparse._SubParsersAction) -> None:
+    p = subparsers.add_parser(
+        "mapback",
+        help="Remap HLA*LA PRG-mapped reads back to chr6 coordinates",
+    )
+    p.add_argument("--source-bam", required=True, help="HLA*LA-remapped BAM file")
+    p.add_argument("--region", required=True, help="Target region on chr6 (samtools-style)")
+    p.add_argument(
+        "--out-bam", default="out.mapback.bam",
+        help="Output BAM file [default: out.mapback.bam]",
+    )
+    p.add_argument(
+        "--genome-build", required=True, choices=("GRCh38", "GRCh37"),
+        help="Reference genome build",
+    )
+    p.add_argument(
+        "--prg-seq",
+        default="HLA-LA/graphs/PRG_MHC_GRCh38_withIMGT/sequences.txt",
+        help="Path to HLA*LA sequences.txt [default: HLA-LA/graphs/PRG_MHC_GRCh38_withIMGT/sequences.txt]",
+    )
+    p.add_argument("--no-sort", action="store_true", help="Skip sorting/indexing output BAM")
+
+
 def _add_stats_parser(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser(
         "stats",
@@ -162,6 +185,19 @@ def _run_plot(args: argparse.Namespace) -> int:
     )
 
 
+def _run_mapback(args: argparse.Namespace) -> int:
+    from .mapback import mapback_run
+
+    return mapback_run(
+        source_bam=args.source_bam,
+        region_str=args.region,
+        out_bam=args.out_bam,
+        genome_build=args.genome_build,
+        prg_seq=args.prg_seq,
+        no_sort=args.no_sort,
+    )
+
+
 def _run_stats(args: argparse.Namespace) -> int:
     from .depth import depth_from_bam, region_parse
     from .metrics import metrics_calculate, metrics_print
@@ -222,6 +258,7 @@ def main(argv: list[str] | None = None) -> None:
     _add_map_parser(subparsers)
     _add_sample_parser(subparsers)
     _add_plot_parser(subparsers)
+    _add_mapback_parser(subparsers)
     _add_stats_parser(subparsers)
 
     args = parser.parse_args(argv)
@@ -234,6 +271,7 @@ def main(argv: list[str] | None = None) -> None:
         "map": _run_map,
         "sample": _run_sample,
         "plot": _run_plot,
+        "mapback": _run_mapback,
         "stats": _run_stats,
     }
 
