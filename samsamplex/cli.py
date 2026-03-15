@@ -32,9 +32,16 @@ def _add_sample_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--source-bam", required=True, help="Input BAM file to sample from")
     p.add_argument(
         "--template-bed",
-        required=True,
-        nargs="+",
-        help="Template BED file(s) with depth values",
+        nargs="*",
+        default=[],
+        help="Template BED file(s) with depth values (required unless --uniform)",
+    )
+    p.add_argument(
+        "--uniform",
+        type=float,
+        default=None,
+        metavar="FRACTION",
+        help="Uniform sampling: retain fraction of reads by hash (0-1). Bypasses template/depth logic.",
     )
     p.add_argument("--region", required=True, help="Target region (samtools-style)")
     p.add_argument("--out-bam", default="out.bam", help="Output BAM file [default: out.bam]")
@@ -158,9 +165,20 @@ def _run_map(args: argparse.Namespace) -> int:
 def _run_sample(args: argparse.Namespace) -> int:
     from .sample import sample_run
 
+    log = lambda msg: print(msg, file=sys.stderr)
+
+    if args.uniform is None and not args.template_bed:
+        log("Error: Either --template-bed or --uniform is required")
+        return 1
+
+    if args.uniform is not None:
+        if args.uniform <= 0 or args.uniform > 1:
+            log(f"Error: --uniform must be in (0, 1], got {args.uniform}")
+            return 1
+
     return sample_run(
         source_bam=args.source_bam,
-        template_beds=args.template_bed,
+        template_beds=args.template_bed if args.template_bed else [],
         region_str=args.region,
         out_bam=args.out_bam,
         mode=args.mode,
@@ -168,6 +186,7 @@ def _run_sample(args: argparse.Namespace) -> int:
         seed=args.seed,
         no_sort=args.no_sort,
         no_metrics=args.no_metrics,
+        uniform_fraction=args.uniform,
     )
 
 

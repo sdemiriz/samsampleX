@@ -97,17 +97,21 @@ def sample_run(
     seed: int = 42,
     no_sort: bool = False,
     no_metrics: bool = False,
+    uniform_fraction: float | None = None,
 ) -> int:
     """Run the sample subcommand. Returns 0 on success."""
     log = lambda msg: print(msg, file=sys.stderr)
 
     log(f"[sample] Source BAM: {source_bam}")
-    log(f"[sample] Template BEDs: {len(template_beds)} file(s)")
-    for i, b in enumerate(template_beds):
-        log(f"[sample]   {i + 1}: {b}")
+    if uniform_fraction is not None:
+        log(f"[sample] Uniform fraction: {uniform_fraction}")
+    else:
+        log(f"[sample] Template BEDs: {len(template_beds)} file(s)")
+        for i, b in enumerate(template_beds):
+            log(f"[sample]   {i + 1}: {b}")
+        log(f"[sample] Stat: {stat}")
+        log(f"[sample] Mode: {mode}")
     log(f"[sample] Region: {region_str}")
-    log(f"[sample] Stat: {stat}")
-    log(f"[sample] Mode: {mode}")
     log(f"[sample] Seed: {seed}")
     log(f"[sample] Output BAM: {out_bam}")
 
@@ -128,42 +132,47 @@ def sample_run(
 
     log(f"[sample] Parsed region: {region.contig}:{region.start}-{region.end}")
 
-    # Load template depth(s)
-    log("[sample] Loading template BED file(s)...")
-    template_arrays = [
-        bed_read_depths(bp, region.contig, region.start, region.end)
-        for bp in template_beds
-    ]
+    if uniform_fraction is None:
+        if not template_beds:
+            log("Error: Template BED(s) required when not using --uniform")
+            return 1
 
-    if len(template_arrays) == 1:
-        template_depth = template_arrays[0]
-    else:
-        log(f"[sample] Combining {len(template_arrays)} templates using '{mode}' mode...")
-        template_depth = bed_combine_depths(template_arrays, mode=mode, seed=seed)
+        # Load template depth(s)
+        log("[sample] Loading template BED file(s)...")
+        template_arrays = [
+            bed_read_depths(bp, region.contig, region.start, region.end)
+            for bp in template_beds
+        ]
 
-    # Compute source depth
-    log("[sample] Computing source depth array...")
-    source_depth = depth_from_bam(source_bam, region.contig, region.start, region.end)
+        if len(template_arrays) == 1:
+            template_depth = template_arrays[0]
+        else:
+            log(f"[sample] Combining {len(template_arrays)} templates using '{mode}' mode...")
+            template_depth = bed_combine_depths(template_arrays, mode=mode, seed=seed)
 
-    # Compute ratios
-    log("[sample] Computing sampling ratios...")
-    ratios = _compute_ratios(template_depth, source_depth)
+        # Compute source depth
+        log("[sample] Computing source depth array...")
+        source_depth = depth_from_bam(source_bam, region.contig, region.start, region.end)
 
-    # Precompute cumulative sum (used by mean stat mode, always needed for default)
-    cumsum = np.concatenate(([0.0], np.cumsum(ratios)))
+        # Compute ratios
+        log("[sample] Computing sampling ratios...")
+        ratios = _compute_ratios(template_depth, source_depth)
 
-    # Choose ratio-lookup function based on stat mode
-    if stat == "mean":
-        get_ratio = lambda rs, re: _get_mean_ratio(cumsum, region.start, region.end, rs, re)
-    elif stat == "min":
-        get_ratio = lambda rs, re: _get_min_ratio(ratios, region.start, region.end, rs, re)
-    elif stat == "max":
-        get_ratio = lambda rs, re: _get_max_ratio(ratios, region.start, region.end, rs, re)
-    elif stat == "median":
-        get_ratio = lambda rs, re: _get_median_ratio(ratios, region.start, region.end, rs, re)
-    else:
-        log(f"Error: Unknown stat mode '{stat}'")
-        return 1
+        # Precompute cumulative sum (used by mean stat mode, always needed for default)
+        cumsum = np.concatenate(([0.0], np.cumsum(ratios)))
+
+        # Choose ratio-lookup function based on stat mode
+        if stat == "mean":
+            get_ratio = lambda rs, re: _get_mean_ratio(cumsum, region.start, region.end, rs, re)
+        elif stat == "min":
+            get_ratio = lambda rs, re: _get_min_ratio(ratios, region.start, region.end, rs, re)
+        elif stat == "max":
+            get_ratio = lambda rs, re: _get_max_ratio(ratios, region.start, region.end, rs, re)
+        elif stat == "median":
+            get_ratio = lambda rs, re: _get_median_ratio(ratios, region.start, region.end, rs, re)
+        else:
+            log(f"Error: Unknown stat mode '{stat}'")
+            return 1
 
     # Sampling loop
     log("[sample] Sampling reads...")
@@ -179,9 +188,12 @@ def sample_run(
                 total_reads += 1
 
                 hash_frac = _xxh32_fraction(read.query_name, seed)
-                ratio = get_ratio(read.reference_start, read.reference_end)
+                if uniform_fraction is not None:
+                    read_ratio = uniform_fraction
+                else:
+                    read_ratio = get_ratio(read.reference_start, read.reference_end)
 
-                if hash_frac < ratio:
+                if hash_frac < read_ratio:
                     out.write(read)
                     kept_reads += 1
 
@@ -204,8 +216,8 @@ def sample_run(
         except Exception as exc:
             log(f"Warning: Failed to sort/index output BAM: {exc}")
 
-    # Metrics
-    if not no_metrics:
+    # Metrics (skip in uniform mode; no template to compare)
+    if not no_metrics and uniform_fraction is None:
         log("[sample] Computing metrics...")
         try:
             output_depth = depth_from_bam(out_bam, region.contig, region.start, region.end)
