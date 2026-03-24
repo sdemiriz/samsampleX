@@ -11,7 +11,9 @@ dependencies = [
     "xxhash",
     "pysam",
     "numpy",
-    "matplotlib"
+    "matplotlib",
+    "pyyaml",
+    "pandas"
 ]
 
 [project.scripts]

@@ -108,7 +108,7 @@ def bed_combine_depths(
 ) -> DepthArray:
     """Combine multiple DepthArrays position-by-position.
 
-    Supported *mode* values: ``"min"``, ``"max"``, ``"mean"``, ``"random"``.
+    Supported *mode* values: ``"min"``, ``"max"``, ``"mean"``, ``"median"``, ``"random"``.
     """
     if len(arrays) == 1:
         return DepthArray(
@@ -126,6 +126,8 @@ def bed_combine_depths(
         combined = stacked.max(axis=0)
     elif mode == "mean":
         combined = (stacked.sum(axis=0) // len(arrays)).astype(np.int32)
+    elif mode == "median":
+        combined = np.rint(np.median(stacked, axis=0)).astype(np.int32)
     elif mode == "random":
         rng = random.Random(seed)
         mins = stacked.min(axis=0)

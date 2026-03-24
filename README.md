@@ -3,6 +3,8 @@ A Python-based tool for customizable BAM file downsampling. Sample reads from a 
 
 ## Features:
 - Reproducable, deterministic downsampling using integer seeds.
+- Uniform sampling mode: retain a fixed fraction of reads by hash, bypassing template/depth logic.
+- Map depth from multiple BAM files to a single BED template using combine modes (`min`, `max`, `mean`, `median`, `random`).
 - Aggregate depth selection using multiple BED templates via select metrics (`min`, `max`, `mean`, `random`).
 - BED template compression and/or smoothing.
 - Calculation of quality metrics:
@@ -29,22 +31,34 @@ pip install .
 
 ## Usage
 ### Mapping
-Extract depth of coverage from template BAM to BED template with optional smoothing.
+Extract depth of coverage from one or more template BAM file(s) to a single BED template. When multiple BAMs are provided, per-position depths are combined using the selected `--mode`.
 ```bash
+# Single BAM
 samsampleX map \
     --template-bam template.bam \
     --region chr1:1000-2000 \
     --out-bed template.bed
+
+# Multiple BAMs (combined per-position using mean)
+samsampleX map \
+    --template-bam a.bam b.bam c.bam \
+    --region chr1:1000-2000 \
+    --mode mean \
+    --out-bed template.bed
 ```
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--template-bam FILE` | Input BAM file (required) | - |
+| `--template-bam FILE [FILE ...]` | Input BAM file(s) (required) | - |
 | `--region REGION` | Target region, samtools-style (required) | - |
 | `--out-bed FILE` | Output BED file | `out.bed` |
 | `--collapse INT` | Merge consecutive positions with depth diff <= INT | `0` (per-position) |
+| `--mode MODE` | Combine mode when multiple BAMs: `min`, `max`, `mean`, `median`, `random` | `mean` |
+| `--seed INT` | Random seed for `--mode random` | `42` |
 
 ### Sampling
-Downsample BAM based on provided BED template(s), using selected metric if multiple BEDs provided.
+Downsample BAM based on provided BED template(s), using selected metric if multiple BEDs provided. Alternatively, use `--uniform` for position-independent uniform sampling by read-name hash.
+
+**Depth-based sampling (template required):**
 ```bash
 samsampleX sample \
     --source-bam high_depth.bam \
@@ -53,10 +67,21 @@ samsampleX sample \
     --out-bam sampled.bam
 ```
 
+**Uniform sampling (no template):**
+```bash
+samsampleX sample \
+    --source-bam high_depth.bam \
+    --uniform 0.5 \
+    --region chr1:1000-2000 \
+    --out-bam sampled.bam
+```
+Retains approximately 50% of reads uniformly across the region.
+
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--source-bam FILE` | Input BAM to sample from (required) | - |
-| `--template-bed FILE` | Template BED file(s) (>=1 required) | - |
+| `--template-bed FILE` | Template BED file(s); required unless `--uniform` is used | - |
+| `--uniform FRACTION` | Uniform sampling: retain fraction of reads by hash (0–1). Bypasses template/depth logic. | - |
 | `--region REGION` | Target region, samtools-style (required) | - |
 | `--out-bam FILE` | Output BAM file | `out.bam` |
 | `--mode MODE` | Combine mode for multiple templates: `min`, `max`, `mean`, `random` | `random` |
@@ -146,24 +171,26 @@ pytest -v
 ## Algorithm rundown
 
 ### Mapping
-1. Parse target region from source BAM header
-2. Compute per-position depth of coverage for region
-3. Write to BED4 format (`chrom`, `start`, `end`, `depth` columns)
-4. Optionally collapse consecutive similar depths (`--collapse`)
+1. Parse target region from first BAM header
+2. Compute per-position depth of coverage for each BAM over the region
+3. If multiple BAMs: combine depths per-position using `--mode` (min, max, mean, median, or random)
+4. Write to BED4 format (`chrom`, `start`, `end`, `depth` columns)
+5. Optionally collapse consecutive similar depths (`--collapse`)
 
 ### Sampling
-1. Load template depths from BED file(s); if multiple templates are provided, combine them per-position using the selected `--mode`
-2. Compute source depths from BAM
-3. Calculate per-position sampling ratio: $ratio(i) = \min(1,\; depth_{template}(i) \;/\; depth_{source}(i))$
+1. **Uniform mode** (`--uniform FRACTION`): Skip template/depth logic. For each read, hash the read name with xxHash32 to get $f_{read} \in [0, 1)$; keep if $f_{read} < FRACTION$. Deterministic and position-independent.
+2. **Depth-based mode**: Load template depths from BED file(s); if multiple templates are provided, combine them per-position using the selected `--mode`
+3. Compute source depths from BAM
+4. Calculate per-position sampling ratio: $ratio(i) = \min(1,\; depth_{template}(i) \;/\; depth_{source}(i))$
    - Positions where the template depth meets or exceeds the source depth get ratio 1.0 (keep all reads)
    - Positions with zero source depth get ratio 0.0
-4. Build a cumulative sum of the ratio array for O(1) range queries
-5. For each read in the source BAM:
+5. Build a cumulative sum of the ratio array for O(1) range queries
+6. For each read in the source BAM:
    - Hash read name with xxHash32 to produce a deterministic fraction $f_{read} \in [0, 1)$
    - Summarise the ratio over the read's covered positions using `--stat` (default: mean via cumsum lookup)
    - Keep the read if $f_{read} < ratio_{read}$
-6. Sort and index output BAM (unless `--no-sort`)
-7. Report metrics: Total Variation and Wasserstein-1 distance (unless `--no-metrics`)
+7. Sort and index output BAM (unless `--no-sort`)
+8. Report metrics (depth-based mode only): Total Variation and Wasserstein-1 distance (unless `--no-metrics`)
 
 ## Metrics
 | Metric | Significance |

@@ -13,7 +13,12 @@ def _add_map_parser(subparsers: argparse._SubParsersAction) -> None:
         "map",
         help="Extract depth of coverage from BAM to BED template",
     )
-    p.add_argument("--template-bam", required=True, help="Input BAM file")
+    p.add_argument(
+        "--template-bam",
+        nargs="+",
+        required=True,
+        help="Input BAM file(s)",
+    )
     p.add_argument("--region", required=True, help="Target region (samtools-style)")
     p.add_argument("--out-bed", default="out.bed", help="Output BED file [default: out.bed]")
     p.add_argument(
@@ -22,6 +27,13 @@ def _add_map_parser(subparsers: argparse._SubParsersAction) -> None:
         default=0,
         help="Merge consecutive positions with depth diff <= INT [default: 0]",
     )
+    p.add_argument(
+        "--mode",
+        default="mean",
+        choices=("min", "max", "mean", "median", "random"),
+        help="How to combine depths when multiple BAMs given [default: mean]",
+    )
+    p.add_argument("--seed", type=int, default=42, help="Random seed for --mode random [default: 42]")
 
 
 def _add_sample_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -117,23 +129,24 @@ def _add_stats_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _run_map(args: argparse.Namespace) -> int:
-    from .bed import write_bed_output
-    from .depth import depth_from_bam, get_contig_length, region_parse
+    from .bed import bed_combine_depths, write_bed_output
+    from .depth import depth_from_bam, region_parse, resolve_contig_name
+
+    import pysam
 
     log = lambda msg: print(msg, file=sys.stderr)
 
     region = region_parse(args.region)
+    template_bams = args.template_bam  # list of one or more paths
 
-    log(f"[map] Template BAM: {args.template_bam}")
+    log(f"[map] Template BAM(s): {template_bams}")
     log(f"[map] Region: {args.region}")
     log(f"[map] Collapse: {args.collapse}")
     log(f"[map] Output BED: {args.out_bed}")
+    if len(template_bams) > 1:
+        log(f"[map] Mode: {args.mode}")
 
-    import pysam
-
-    with pysam.AlignmentFile(args.template_bam, "rb") as bam:
-        from .depth import resolve_contig_name
-
+    with pysam.AlignmentFile(template_bams[0], "rb") as bam:
         resolved = resolve_contig_name(bam.header, region.contig)
         if resolved is None:
             log(f"Error: Contig '{region.contig}' not found in BAM")
@@ -147,9 +160,21 @@ def _run_map(args: argparse.Namespace) -> int:
         region.end = contig_len
 
     log(f"[map] Parsed region: {region.contig}:{region.start}-{region.end}")
-    log("[map] Computing depth array (this may take a while)...")
+    log("[map] Computing depth array(s) (this may take a while)...")
 
-    depth = depth_from_bam(args.template_bam, region.contig, region.start, region.end)
+    depth_arrays = []
+    for bam_path in template_bams:
+        depth_arrays.append(
+            depth_from_bam(bam_path, region.contig, region.start, region.end)
+        )
+
+    if len(depth_arrays) == 1:
+        depth = depth_arrays[0]
+    else:
+        depth = bed_combine_depths(
+            depth_arrays, mode=args.mode, seed=args.seed
+        )
+
     log(f"[map] Computed depth for {depth.length} positions")
 
     suffix = " (collapsed)" if args.collapse > 0 else ""
