@@ -161,10 +161,16 @@ samsampleX stats \
 
 ## Example
 
-The following commands 
+![Example plot results](examples/example-plot.png)
+
+The following commands showcase an example workflow of a short, arbitrary region on chromosome 21. Three Thousand Genomes 30X WGS samples are downloaded and mapped to a template, then used to downsample a GIAB 300X WGS sample in the same region. The results are finally displayed on a plot.
+
 
 ```bash
 cd examples/
+
+# Download reference genome (GRCh38)
+wget https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/GRCh38_reference_genome/GRCh38_full_analysis_set_plus_decoy_hla.fa
 
 # Download three first three 1K Genomes 30X WGS samples from
 # https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000G_2504_high_coverage/1000G_2504_high_coverage.sequence.index
@@ -172,10 +178,7 @@ wget ftp://ftp.sra.ebi.ac.uk/vol1/run/ERR323/ERR3239480/NA12718.final.cram -O NA
 wget ftp://ftp.sra.ebi.ac.uk/vol1/run/ERR323/ERR3239481/NA12748.final.cram -O NA12748.cram && samtools index NA12748.cram
 wget ftp://ftp.sra.ebi.ac.uk/vol1/run/ERR323/ERR3239482/NA12775.final.cram -O NA12775.cram && samtools index NA12775.cram
 
-# Download reference genome (GRCh38)
-wget https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/GRCh38_reference_genome/GRCh38_full_analysis_set_plus_decoy_hla.fa
-
-# Convert to BAM and index
+# Convert to BAM, restrict to target region and index
 samtools view NA12718.cram chr21:10000000-10010000 -b -o NA12718.bam -T GRCh38_full_analysis_set_plus_decoy_hla.fa && samtools index NA12718.bam
 samtools view NA12748.cram chr21:10000000-10010000 -b -o NA12748.bam -T GRCh38_full_analysis_set_plus_decoy_hla.fa && samtools index NA12748.bam
 samtools view NA12775.cram chr21:10000000-10010000 -b -o NA12775.bam -T GRCh38_full_analysis_set_plus_decoy_hla.fa && samtools index NA12775.bam
