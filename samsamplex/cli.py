@@ -70,7 +70,7 @@ def _add_sample_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Statistic for summarising ratio over read span [default: mean]",
     )
     p.add_argument("--seed", type=int, default=42, help="Random seed [default: 42]")
-    p.add_argument("--no-sort", action="store_true", help="Skip sorting/indexing output BAM")
+    # p.add_argument("--no-sort", action="store_true", help="Skip sorting/indexing output BAM")
     p.add_argument("--no-metrics", action="store_true", help="Skip metrics calculation")
 
 
@@ -209,7 +209,7 @@ def _run_sample(args: argparse.Namespace) -> int:
         mode=args.mode,
         stat=args.stat,
         seed=args.seed,
-        no_sort=args.no_sort,
+        # no_sort=args.no_sort,
         no_metrics=args.no_metrics,
         uniform_fraction=args.uniform,
     )
