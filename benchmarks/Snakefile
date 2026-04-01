@@ -27,24 +27,33 @@ def get_region(benchmark):
 def get_templates(benchmark):
     return config["benchmarks"][benchmark]["templates"]
 
-def get_template_beds(benchmark):
-    templates = get_templates(benchmark)
-    return [f"{benchmark}/{t}.bed" for t in templates]
+
+SNAKE_DIR = os.path.dirname(workflow.snakefile)
+SAMSAMPLEX_ROOT = os.path.normpath(os.path.join(SNAKE_DIR, ".."))
+
+# Mirror samsampleX-py/plot.py TOOLS (comparison_plot rule inputs).
+PLOT_TOOLS = [
+    "gatk-constant-memory",
+    "samtools",
+    "sambamba",
+    "samsampleX-sample",
+]
+
+
+def get_plot_seed(benchmark):
+    """First replicate seed; matches plot.py default when config seed is one less."""
+    return get_config(benchmark, "seed") + 1
+
+
+def get_plot_tool_bams(wildcards):
+    s = get_plot_seed(wildcards.benchmark)
+    return [f"{wildcards.benchmark}/{t}.seed{s}.bam" for t in PLOT_TOOLS]
 
 
 rule all:
     input:
-        expand("benchmark-{benchmark}.tsv", benchmark=BENCHMARKS)
-
-# rule build_samsampleX:
-#     output:
-#         binary=SAMSAMPLEX,
-#     container:
-#         "bench.sif"
-#     shell:
-#         """
-#         cd .. && make
-#         """
+        expand("benchmark-{benchmark}.tsv", benchmark=BENCHMARKS),
+        expand("{benchmark}/{benchmark}-comparison.png", benchmark=BENCHMARKS),
 
 rule preprocess_source:
     input:
@@ -204,17 +213,20 @@ rule sambamba:
         """
 
 rule samsampleX_map:
+    """One BED template: combine depth from all configured template BAMs (same mode as sample)."""
     input:
-        template=lambda wc: wc.template,
+        template_bams=lambda wc: get_templates(wc.benchmark),
         source="{benchmark}/source.bam",
         source_index="{benchmark}/source.bam.bai",
     params:
         region=lambda wc: get_region(wc.benchmark),
         collapse=lambda wc: get_config(wc.benchmark, "collapse"),
+        mode=lambda wc: get_config(wc.benchmark, "mode"),
+        map_seed=lambda wc: get_config(wc.benchmark, "seed"),
     output:
-        bed="{benchmark}/{template}.bed",
+        bed="{benchmark}/samsampleX-template.bed",
     benchmark:
-        "{benchmark}/benchmarks/samsampleX-map.{template}.tsv"
+        "{benchmark}/benchmarks/samsampleX-map.tsv"
     resources:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
@@ -224,18 +236,20 @@ rule samsampleX_map:
     shell:
         """
         samsampleX map \
-        --template-bam {input.template} \
+        --template-bam {input.template_bams} \
         --region {params.region} \
         --collapse {params.collapse} \
+        --mode {params.mode} \
+        --seed {params.map_seed} \
         --out-bed {output.bed}
         """
 
 rule samsampleX_sampling:
-    """Downsample using samsampleX with multiple template BEDs"""
+    """Downsample using samsampleX; template depth profile comes from combined map output."""
     input:
         bam="{benchmark}/source.bam",
         index="{benchmark}/source.bam.bai",
-        template_beds=lambda wc: get_template_beds(wc.benchmark),
+        template_bed="{benchmark}/samsampleX-template.bed",
     params:
         mode=lambda wc: get_config(wc.benchmark, "mode"),
         region=lambda wc: get_region(wc.benchmark),
@@ -255,7 +269,7 @@ rule samsampleX_sampling:
         """
         samsampleX sample \
         --source-bam {input.bam} \
-        --template-bed {input.template_beds} \
+        --template-bed {input.template_bed} \
         --out-bam {output.bam} \
         --no-metrics \
         --region {params.region} \
@@ -316,8 +330,7 @@ rule results:
             for tool in COMPARISON_TOOLS
             for seed in get_seeds(wc.benchmark)
         ] + [
-            f"{wc.benchmark}/benchmarks/samsampleX-map.{t}.tsv"
-            for t in get_templates(wc.benchmark)
+            f"{wc.benchmark}/benchmarks/samsampleX-map.tsv",
         ],
     output:
         results="{benchmark}/results.tsv"
@@ -340,13 +353,12 @@ rule results:
                 data["seed"] = str(seed)
                 results.append(data)
         
-        # Add samsampleX_map entries (one per template)
-        for template in get_templates(wildcards.benchmark):
-            path = f"{wildcards.benchmark}/benchmarks/samsampleX-map.{template}.tsv"
-            data = parse_benchmark(path)
-            data["tool"] = f"samsampleX-map ({template})"
-            data["seed"] = "NA"
-            results.append(data)
+        # samsampleX map (single run combining all template BAMs)
+        path = f"{wildcards.benchmark}/benchmarks/samsampleX-map.tsv"
+        data = parse_benchmark(path)
+        data["tool"] = "samsampleX-map"
+        data["seed"] = "NA"
+        results.append(data)
         
         headers = ["s", "h:m:s", "max_rss", "max_vms", "max_uss", "max_pss", "io_in", "io_out", "mean_load", "cpu_time"]
         
@@ -442,7 +454,7 @@ rule stats_summary:
                         match = re.search(r'([\d.]+)\s*$', line)
                         if match:
                             data['tv'] = float(match.group(1))
-                    elif "Wasserstein-1" in line:
+                    elif "Wasserstein" in line:
                         match = re.search(r'([\d.]+)\s*$', line)
                         if match:
                             data['wasserstein'] = float(match.group(1))
@@ -578,3 +590,30 @@ rule consolidated_summary:
                     w1_str = "NA"
                 
                 out.write(f"{tool}\t{wall_str}\t{mem_str}\t{tv_str}\t{w1_str}\n")
+
+
+# Depth comparison PNG/TSV via plot.py. Ad-hoc runs may use comparison_plot.sh instead.
+# No container: host Python needs matplotlib/pandas (same situation as rule results).
+# If using --use-singularity globally, disable the container for this rule or use run: with host env.
+rule comparison_plot:
+    input:
+        consolidated="benchmark-{benchmark}.tsv",
+        template_bed="{benchmark}/samsampleX-template.bed",
+        source_bam="{benchmark}/source.bam",
+        source_index="{benchmark}/source.bam.bai",
+        tool_bams=get_plot_tool_bams,
+    output:
+        png="{benchmark}/{benchmark}-comparison.png",
+        tsv="{benchmark}/{benchmark}-comparison.tsv",
+    params:
+        root=SAMSAMPLEX_ROOT,
+        plot_seed=lambda wc: get_plot_seed(wc.benchmark),
+        config_relpath="benchmarks/config.yaml",
+    resources:
+        cpus=1,
+        mem_mb=16384,
+        time="1:00:00",
+    shell:
+        """
+        cd {params.root} && python plot.py --config {params.config_relpath} --benchmark {wildcards.benchmark} --seed {params.plot_seed} --output-dir benchmarks/{wildcards.benchmark}
+        """
