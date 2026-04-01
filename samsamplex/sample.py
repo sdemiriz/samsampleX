@@ -95,7 +95,7 @@ def sample_run(
     mode: str = "random",
     stat: str = "mean",
     seed: int = 42,
-    no_sort: bool = False,
+    # no_sort: bool = False,
     no_metrics: bool = False,
     uniform_fraction: float | None = None,
 ) -> int:
@@ -205,16 +205,16 @@ def sample_run(
     log(f"[sample] Processed {total_reads} reads, kept {kept_reads} ({pct:.1f}%)")
 
     # Sort and index
-    if not no_sort:
-        log("[sample] Sorting output BAM...")
-        tmp_sorted = out_bam + ".tmp.sorted.bam"
-        try:
-            pysam.sort("-o", tmp_sorted, out_bam)
-            os.replace(tmp_sorted, out_bam)
-            pysam.index(out_bam)
-            log("[sample] Sorting and indexing complete.")
-        except Exception as exc:
-            log(f"Warning: Failed to sort/index output BAM: {exc}")
+    # if not no_sort:
+    #     log("[sample] Sorting output BAM...")
+    #     tmp_sorted = out_bam + ".tmp.sorted.bam"
+    #     try:
+    #         pysam.sort("-o", tmp_sorted, out_bam)
+    #         os.replace(tmp_sorted, out_bam)
+    #         pysam.index(out_bam)
+    #         log("[sample] Sorting and indexing complete.")
+    #     except Exception as exc:
+    #         log(f"Warning: Failed to sort/index output BAM: {exc}")
 
     # Metrics (skip in uniform mode; no template to compare)
     if not no_metrics and uniform_fraction is None:

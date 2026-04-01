@@ -257,7 +257,6 @@ rule samsampleX_sampling:
         --source-bam {input.bam} \
         --template-bed {input.template_beds} \
         --out-bam {output.bam} \
-        --no-sort \
         --no-metrics \
         --region {params.region} \
         --seed {wildcards.seed} \

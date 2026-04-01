@@ -87,7 +87,6 @@ Retains approximately 50% of reads uniformly across the region.
 | `--mode MODE` | Combine mode for multiple templates: `min`, `max`, `mean`, `random` | `random` |
 | `--stat STAT` | Statistic for summarising ratio over read span: `mean`, `min`, `max`, `median` | `mean` |
 | `--seed INT` | Random seed for reproducibility | `42` |
-| `--no-sort` | Skip sorting and indexing output | false |
 | `--no-metrics` | Skip metrics calculation after sampling | false |
 
 ### Plotting
@@ -144,7 +143,6 @@ samsampleX sample \
 | `--out-bam FILE` | Output BAM file | `out.mapback.bam` |
 | `--genome-build BUILD` | Reference genome build: `GRCh38` or `GRCh37` (required) | - |
 | `--prg-seq FILE` | Path to HLA\*LA `sequences.txt` | `HLA-LA/graphs/PRG_MHC_GRCh38_withIMGT/sequences.txt` |
-| `--no-sort` | Skip sorting and indexing output | false |
 
 ### Stats
 Compare depth distributions between two BAM files over a given region. Reports mean depth for each BAM, Total Variation distance, and normalised Wasserstein-1 distance.
@@ -189,8 +187,7 @@ pytest -v
    - Hash read name with xxHash32 to produce a deterministic fraction $f_{read} \in [0, 1)$
    - Summarise the ratio over the read's covered positions using `--stat` (default: mean via cumsum lookup)
    - Keep the read if $f_{read} < ratio_{read}$
-7. Sort and index output BAM (unless `--no-sort`)
-8. Report metrics (depth-based mode only): Total Variation and Wasserstein-1 distance (unless `--no-metrics`)
+7. Report metrics (depth-based mode only): Total Variation and Wasserstein-1 distance (unless `--no-metrics`)
 
 ## Metrics
 | Metric | Significance |
