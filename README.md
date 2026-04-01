@@ -159,6 +159,56 @@ samsampleX stats \
 | `--bam-b FILE` | Second BAM file, e.g. sampled output (required) | - |
 | `--region REGION` | Target region, samtools-style (required) | - |
 
+## Example
+
+The following commands 
+
+```bash
+cd examples/
+
+# Download three first three 1K Genomes 30X WGS samples from
+# https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000G_2504_high_coverage/1000G_2504_high_coverage.sequence.index
+wget ftp://ftp.sra.ebi.ac.uk/vol1/run/ERR323/ERR3239480/NA12718.final.cram -O NA12718.cram && samtools index NA12718.cram
+wget ftp://ftp.sra.ebi.ac.uk/vol1/run/ERR323/ERR3239481/NA12748.final.cram -O NA12748.cram && samtools index NA12748.cram
+wget ftp://ftp.sra.ebi.ac.uk/vol1/run/ERR323/ERR3239482/NA12775.final.cram -O NA12775.cram && samtools index NA12775.cram
+
+# Download reference genome (GRCh38)
+wget https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/GRCh38_reference_genome/GRCh38_full_analysis_set_plus_decoy_hla.fa
+
+# Convert to BAM and index
+samtools view NA12718.final.cram chr21:10000000-10010000 -b -o NA12718.bam -T GRCh38_full_analysis_set_plus_decoy_hla.fa && samtools index NA12718.bam
+samtools view NA12748.final.cram chr21:10000000-10010000 -b -o NA12748.bam -T GRCh38_full_analysis_set_plus_decoy_hla.fa && samtools index NA12748.bam
+samtools view NA12775.final.cram chr21:10000000-10010000 -b -o NA12775.bam -T GRCh38_full_analysis_set_plus_decoy_hla.fa && samtools index NA12775.bam
+
+# Run samsampleX workflow
+samsampleX map \
+    --template-bam NA12718.bam NA12748.bam NA12775.bam \
+    --region chr21:10000000-10010000 \
+    --mode mean \
+    --collapse 0 \
+    --out-bed template.bed
+# template.bed should match example-template.bed
+
+# Source BAM+index is provided in the examples directory, created by subsetting to target region from
+# https://ftp.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/AshkenazimTrio/HG002_NA24385_son/NIST_HiSeq_HG002_Homogeneity-10953946/NHGRI_Illumina300X_AJtrio_novoalign_bams/HG002.GRCh38.300x.bam
+samsampleX sample \
+    --source-bam HG002.GRCh38.300x.chr21:10000000-10010000.bam \
+    --template-bed template.bed \
+    --region chr21:10000000-10010000 \
+    --seed 42 \
+    --out-bam sampled.bam
+
+samtools index sampled.bam
+
+samsampleX plot \
+    --source-bam HG002.GRCh38.300x.chr21:10000000-10010000.bam \
+    --template-bed template.bed \
+    --out-bam sampled.bam \
+    --region chr21:10000000-10010000 \
+    --out-png plot.png
+# plot.png should match example-plot.png
+```
+
 ## Testing
 
 A `pytest` test suite is available. Run using the `-v` flag for a detailed report.
