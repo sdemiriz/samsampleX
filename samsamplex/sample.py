@@ -98,6 +98,7 @@ def sample_run(
     # no_sort: bool = False,
     no_metrics: bool = False,
     uniform_fraction: float | None = None,
+    threads: int = 2,
 ) -> int:
     """Run the sample subcommand. Returns 0 on success."""
     log = lambda msg: print(msg, file=sys.stderr)
@@ -180,7 +181,7 @@ def sample_run(
     kept_reads = 0
 
     with pysam.AlignmentFile(source_bam, "rb") as src:
-        with pysam.AlignmentFile(out_bam, "wb", header=src.header) as out:
+        with pysam.AlignmentFile(out_bam, "wb", header=src.header, threads=threads) as out:
             for read in src.fetch(region.contig, region.start, region.end):
                 if read.is_unmapped:
                     continue
