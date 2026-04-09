@@ -12,8 +12,6 @@ dependencies = [
     "pysam",
     "numpy",
     "matplotlib",
-    "pyyaml",
-    "pandas"
 ]
 
 [project.scripts]
