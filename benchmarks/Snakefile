@@ -1,17 +1,68 @@
 configfile: "config.yaml"
 
 import os
+from textwrap import dedent
 
 BENCHMARKS = list(config["benchmarks"].keys())
 
-COMPARISON_TOOLS = [
-    "gatk-high-accuracy",
-    "gatk-constant-memory",
-    "gatk-chained",
-    "samtools",
-    "sambamba",
-    "samsampleX-sample"
-]
+# Subset of tool names used as {tool} wildcard in index_output_bam / compare_stats.
+TOOL_PATTERN = (
+    "gatk-high-accuracy|gatk-constant-memory|gatk-chained|"
+    "samtools|sambamba|samsampleX-sample|samsampleX-uniform"
+)
+
+# Non-samsampleX tools: pairwise stats vs samsampleX-uniform on uniform benchmarks only.
+REF_TOOL_PATTERN = "gatk-high-accuracy|gatk-constant-memory|gatk-chained|samtools|sambamba"
+
+
+def uses_uniform_samsample(benchmark):
+    """Benchmarks with no template BAMs use samsampleX --uniform instead of map+sample."""
+    return "templates" not in config["benchmarks"][benchmark]
+
+
+def get_comparison_tools(benchmark):
+    tools = [
+        "gatk-high-accuracy",
+        "gatk-constant-memory",
+        "gatk-chained",
+        "samtools",
+        "sambamba",
+    ]
+    tools.append(
+        "samsampleX-uniform" if uses_uniform_samsample(benchmark) else "samsampleX-sample"
+    )
+    return tools
+
+
+def get_non_samsamplex_comparison_tools(_benchmark):
+    """GATK / samtools / sambamba names used for uniform pairwise stats (_benchmark reserved for future per-benchmark lists)."""
+    return [
+        "gatk-high-accuracy",
+        "gatk-constant-memory",
+        "gatk-chained",
+        "samtools",
+        "sambamba",
+    ]
+
+
+def get_plot_tools(benchmark):
+    tools = [
+        "gatk-constant-memory",
+        "samtools",
+        "sambamba",
+    ]
+    tools.append(
+        "samsampleX-uniform" if uses_uniform_samsample(benchmark) else "samsampleX-sample"
+    )
+    return tools
+
+
+def get_stats_reference_bam(benchmark):
+    """BAM A for samsampleX stats: source slice for uniform; first template otherwise."""
+    if uses_uniform_samsample(benchmark):
+        return f"{benchmark}/source.bam"
+    return get_templates(benchmark)[0]
+
 
 def get_config(benchmark, key):
     return config["benchmarks"][benchmark][key]
@@ -31,14 +82,6 @@ def get_templates(benchmark):
 SNAKE_DIR = os.path.dirname(workflow.snakefile)
 SAMSAMPLEX_ROOT = os.path.normpath(os.path.join(SNAKE_DIR, ".."))
 
-# Mirror samsampleX-py/plot.py TOOLS (comparison_plot rule inputs).
-PLOT_TOOLS = [
-    "gatk-constant-memory",
-    "samtools",
-    "sambamba",
-    "samsampleX-sample",
-]
-
 
 def get_plot_seed(benchmark):
     """First replicate seed; matches plot.py default when config seed is one less."""
@@ -47,7 +90,10 @@ def get_plot_seed(benchmark):
 
 def get_plot_tool_bams(wildcards):
     s = get_plot_seed(wildcards.benchmark)
-    return [f"{wildcards.benchmark}/{t}.seed{s}.bam" for t in PLOT_TOOLS]
+    return [
+        f"{wildcards.benchmark}/{t}.seed{s}.bam"
+        for t in get_plot_tools(wildcards.benchmark)
+    ]
 
 
 rule all:
@@ -277,6 +323,74 @@ rule samsampleX_sampling:
         --mode {params.mode}
         """
 
+rule uniform_plot_template_bed:
+    """Target depth curve for plots: source depth × coefficient (no cohort map)."""
+    input:
+        bam="{benchmark}/source.bam",
+        index="{benchmark}/source.bam.bai",
+    output:
+        bed="{benchmark}/uniform-plot-template.bed",
+    params:
+        region=lambda wc: get_region(wc.benchmark),
+        coefficient=lambda wc: get_config(wc.benchmark, "coefficient"),
+    resources:
+        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
+        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
+        time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
+    shell:
+        dedent(
+            """
+            python3 << 'PY'
+            import numpy as np
+            from samsamplex.depth import DepthArray, depth_from_bam, region_parse
+            from samsamplex.bed import write_bed_output
+
+            bam = "{input.bam}"
+            out_path = "{output.bed}"
+            region = region_parse("{params.region}")
+            coef = float({params.coefficient})
+            arr = depth_from_bam(bam, region.contig, region.start, region.end)
+            scaled = np.maximum(0, np.round(arr.depths.astype(float) * coef)).astype(np.int32)
+            scaled_arr = DepthArray(arr.contig, arr.start, arr.end, scaled)
+            with open(out_path, "w") as fp:
+                write_bed_output(fp, scaled_arr)
+            PY
+            """
+        ).strip() + "\n"
+
+rule samsampleX_uniform:
+    """Uniform downsampling via samsampleX (no template BED or map step)."""
+    input:
+        bam="{benchmark}/source.bam",
+        index="{benchmark}/source.bam.bai",
+    params:
+        coefficient=lambda wc: get_config(wc.benchmark, "coefficient"),
+        region=lambda wc: get_region(wc.benchmark),
+    wildcard_constraints:
+        seed=r"\d+",
+    output:
+        bam="{benchmark}/samsampleX-uniform.seed{seed}.bam",
+    benchmark:
+        "{benchmark}/benchmarks/samsampleX-uniform.seed{seed}.tsv"
+    resources:
+        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
+        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
+        time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
+    shell:
+        """
+        samsampleX sample \
+        --source-bam {input.bam} \
+        --uniform {params.coefficient} \
+        --out-bam {output.bam} \
+        --no-metrics \
+        --region {params.region} \
+        --seed {wildcards.seed}
+        """
+
 rule index_output_bam:
     """Index output BAM files for stats comparison"""
     input:
@@ -285,6 +399,7 @@ rule index_output_bam:
         index="{benchmark}/{tool}.seed{seed}.bam.bai"
     wildcard_constraints:
         seed=r"\d+",
+        tool=TOOL_PATTERN,
     container:
         "bench.sif"
     shell:
@@ -293,15 +408,16 @@ rule index_output_bam:
         """
 
 rule compare_stats:
-    """Compare tool output against first template BAM using samsampleX stats"""
+    """samsampleX stats: reference BAM vs each tool output. Used for template benchmarks only; uniform uses compare_stats_uniform_pairwise."""
     input:
         tool_bam="{benchmark}/{tool}.seed{seed}.bam",
         tool_index="{benchmark}/{tool}.seed{seed}.bam.bai",
-        template_bam=lambda wc: get_templates(wc.benchmark)[0],
+        template_bam=lambda wc: get_stats_reference_bam(wc.benchmark),
     params:
         region=lambda wc: get_region(wc.benchmark),
     wildcard_constraints:
         seed=r"\d+",
+        tool=TOOL_PATTERN,
     output:
         stats="{benchmark}/{tool}.seed{seed}.stats"
     resources:
@@ -319,6 +435,35 @@ rule compare_stats:
             2> {output.stats}
         """
 
+# Uniform benchmarks only (requested via stats_summary inputs). BAM A = competitor, B = samsampleX-uniform.
+rule compare_stats_uniform_pairwise:
+    input:
+        ref_bam="{benchmark}/{ref_tool}.seed{seed}.bam",
+        ref_index="{benchmark}/{ref_tool}.seed{seed}.bam.bai",
+        samsamplex_bam="{benchmark}/samsampleX-uniform.seed{seed}.bam",
+        samsamplex_index="{benchmark}/samsampleX-uniform.seed{seed}.bam.bai",
+    params:
+        region=lambda wc: get_region(wc.benchmark),
+    wildcard_constraints:
+        seed=r"\d+",
+        ref_tool=REF_TOOL_PATTERN,
+    output:
+        stats="{benchmark}/samsampleX-uniform.vs.{ref_tool}.seed{seed}.stats",
+    resources:
+        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
+        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
+        time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
+    shell:
+        """
+        samsampleX stats \
+            --bam-a {input.ref_bam} \
+            --bam-b {input.samsamplex_bam} \
+            --region {params.region} \
+            2> {output.stats}
+        """
+
 def get_all_benchmark_files(benchmark, pattern):
     seeds = get_seeds(benchmark)
     return [pattern.format(benchmark=benchmark, seed=s) for s in seeds]
@@ -327,11 +472,14 @@ rule results:
     input:
         benchmarks=lambda wc: [
             f"{wc.benchmark}/benchmarks/{tool}.seed{seed}.tsv"
-            for tool in COMPARISON_TOOLS
+            for tool in get_comparison_tools(wc.benchmark)
             for seed in get_seeds(wc.benchmark)
-        ] + [
-            f"{wc.benchmark}/benchmarks/samsampleX-map.tsv",
-        ],
+        ]
+        + (
+            []
+            if uses_uniform_samsample(wc.benchmark)
+            else [f"{wc.benchmark}/benchmarks/samsampleX-map.tsv"]
+        ),
     output:
         results="{benchmark}/results.tsv"
     run:
@@ -344,8 +492,9 @@ rule results:
         
         results = []
         seeds = get_seeds(wildcards.benchmark)
+        cmp_tools = get_comparison_tools(wildcards.benchmark)
         
-        for tool in COMPARISON_TOOLS:
+        for tool in cmp_tools:
             for seed in seeds:
                 path = f"{wildcards.benchmark}/benchmarks/{tool}.seed{seed}.tsv"
                 data = parse_benchmark(path)
@@ -353,12 +502,13 @@ rule results:
                 data["seed"] = str(seed)
                 results.append(data)
         
-        # samsampleX map (single run combining all template BAMs)
-        path = f"{wildcards.benchmark}/benchmarks/samsampleX-map.tsv"
-        data = parse_benchmark(path)
-        data["tool"] = "samsampleX-map"
-        data["seed"] = "NA"
-        results.append(data)
+        # samsampleX map (single run combining all template BAMs); not used for uniform benchmarks
+        if not uses_uniform_samsample(wildcards.benchmark):
+            path = f"{wildcards.benchmark}/benchmarks/samsampleX-map.tsv"
+            data = parse_benchmark(path)
+            data["tool"] = "samsampleX-map"
+            data["seed"] = "NA"
+            results.append(data)
         
         headers = ["s", "h:m:s", "max_rss", "max_vms", "max_uss", "max_pss", "io_in", "io_out", "mean_load", "cpu_time"]
         
@@ -426,11 +576,19 @@ rule results_summary:
 
 rule stats_summary:
     input:
-        stats=lambda wc: [
-            f"{wc.benchmark}/{tool}.seed{seed}.stats"
-            for tool in COMPARISON_TOOLS
-            for seed in get_seeds(wc.benchmark)
-        ],
+        stats=lambda wc: (
+            [
+                f"{wc.benchmark}/samsampleX-uniform.vs.{ref_tool}.seed{seed}.stats"
+                for ref_tool in get_non_samsamplex_comparison_tools(wc.benchmark)
+                for seed in get_seeds(wc.benchmark)
+            ]
+            if uses_uniform_samsample(wc.benchmark)
+            else [
+                f"{wc.benchmark}/{tool}.seed{seed}.stats"
+                for tool in get_comparison_tools(wc.benchmark)
+                for seed in get_seeds(wc.benchmark)
+            ]
+        ),
     output:
         summary="{benchmark}/stats_summary.tsv"
     run:
@@ -461,19 +619,33 @@ rule stats_summary:
             return data
         
         seeds = get_seeds(wildcards.benchmark)
-        tool_results = {tool: [] for tool in COMPARISON_TOOLS}
-        
-        for tool in COMPARISON_TOOLS:
-            for seed in seeds:
-                filepath = f"{wildcards.benchmark}/{tool}.seed{seed}.stats"
-                data = parse_stats_file(filepath)
-                if data:
-                    tool_results[tool].append(data)
+        if uses_uniform_samsample(wildcards.benchmark):
+            ref_tools = get_non_samsamplex_comparison_tools(wildcards.benchmark)
+            group_keys = [f"samsampleX-vs-{rt}" for rt in ref_tools]
+            tool_results = {k: [] for k in group_keys}
+            for ref_tool in ref_tools:
+                label = f"samsampleX-vs-{ref_tool}"
+                for seed in seeds:
+                    filepath = f"{wildcards.benchmark}/samsampleX-uniform.vs.{ref_tool}.seed{seed}.stats"
+                    data = parse_stats_file(filepath)
+                    if data:
+                        tool_results[label].append(data)
+            row_order = group_keys
+        else:
+            cmp_tools = get_comparison_tools(wildcards.benchmark)
+            tool_results = {tool: [] for tool in cmp_tools}
+            for tool in cmp_tools:
+                for seed in seeds:
+                    filepath = f"{wildcards.benchmark}/{tool}.seed{seed}.stats"
+                    data = parse_stats_file(filepath)
+                    if data:
+                        tool_results[tool].append(data)
+            row_order = cmp_tools
         
         summary_rows = []
         metrics = ['tv', 'wasserstein', 'mean_depth_tool']
         
-        for tool in COMPARISON_TOOLS:
+        for tool in row_order:
             results = tool_results[tool]
             if not results:
                 continue
@@ -562,34 +734,65 @@ rule consolidated_summary:
                     'w1_std': fields[col_idx.get('wasserstein_std', -1)],
                 }
         
+        def format_consolidated_row(tool, rt, acc):
+            try:
+                wall_str = f"{float(rt['wall_mean']):.2f} ({float(rt['wall_std']):.2f})"
+            except (ValueError, TypeError):
+                wall_str = f"{rt['wall_mean']} ({rt['wall_std']})"
+            mem_str = f"{rt['mem_mean_gb']:.2f} ({rt['mem_std_gb']:.2f})"
+            try:
+                tv_str = f"{float(acc.get('tv_mean', 'NA')):.4f} ({float(acc.get('tv_std', 'NA')):.4f})"
+            except (ValueError, TypeError):
+                tv_str = "NA"
+            try:
+                w1_str = f"{float(acc.get('w1_mean', 'NA')):.4f} ({float(acc.get('w1_std', 'NA')):.4f})"
+            except (ValueError, TypeError):
+                w1_str = "NA"
+            return f"{tool}\t{wall_str}\t{mem_str}\t{tv_str}\t{w1_str}\n"
+
         with open(output.consolidated, 'w') as out:
             out.write("Tool\tWall Clock (s)\tMemory (GB)\tTV\tNorm. W1\n")
-            
-            sorted_tools = sorted(runtime_data.keys(), 
-                                  key=lambda t: float(runtime_data[t]['wall_mean']) if runtime_data[t]['wall_mean'] not in ['NA', ''] else 999)
-            
-            for tool in sorted_tools:
-                rt = runtime_data[tool]
-                acc = accuracy_data.get(tool, {})
-                
-                try:
-                    wall_str = f"{float(rt['wall_mean']):.2f} ± {float(rt['wall_std']):.2f}"
-                except (ValueError, TypeError):
-                    wall_str = f"{rt['wall_mean']} ± {rt['wall_std']}"
-                
-                mem_str = f"{rt['mem_mean_gb']:.2f} ± {rt['mem_std_gb']:.2f}"
-                
-                try:
-                    tv_str = f"{float(acc.get('tv_mean', 'NA')):.4f} ± {float(acc.get('tv_std', 'NA')):.4f}"
-                except (ValueError, TypeError):
-                    tv_str = "NA"
-                
-                try:
-                    w1_str = f"{float(acc.get('w1_mean', 'NA')):.4f} ± {float(acc.get('w1_std', 'NA')):.4f}"
-                except (ValueError, TypeError):
-                    w1_str = "NA"
-                
-                out.write(f"{tool}\t{wall_str}\t{mem_str}\t{tv_str}\t{w1_str}\n")
+            if uses_uniform_samsample(wildcards.benchmark):
+                competitors = get_non_samsamplex_comparison_tools(wildcards.benchmark)
+                samx_rt = runtime_data.get(
+                    "samsampleX-uniform",
+                    {
+                        "wall_mean": "NA",
+                        "wall_std": "NA",
+                        "mem_mean_gb": 0.0,
+                        "mem_std_gb": 0.0,
+                    },
+                )
+                sorted_comp = sorted(
+                    [t for t in competitors if t in runtime_data],
+                    key=lambda t: float(runtime_data[t]["wall_mean"])
+                    if runtime_data[t]["wall_mean"] not in ["NA", ""]
+                    else 999,
+                )
+                for tool in sorted_comp:
+                    out.write(format_consolidated_row(tool, runtime_data[tool], {}))
+                for ref_tool in competitors:
+                    label = f"samsampleX-vs-{ref_tool}"
+                    out.write(
+                        format_consolidated_row(
+                            label, samx_rt, accuracy_data.get(label, {})
+                        )
+                    )
+            else:
+                sorted_tools = sorted(
+                    runtime_data.keys(),
+                    key=lambda t: float(runtime_data[t]["wall_mean"])
+                    if runtime_data[t]["wall_mean"] not in ["NA", ""]
+                    else 999,
+                )
+                for tool in sorted_tools:
+                    out.write(
+                        format_consolidated_row(
+                            tool,
+                            runtime_data[tool],
+                            accuracy_data.get(tool, {}),
+                        )
+                    )
 
 
 # Depth comparison PNG/TSV via plot.py. Ad-hoc runs may use comparison_plot.sh instead.
@@ -598,7 +801,11 @@ rule consolidated_summary:
 rule comparison_plot:
     input:
         consolidated="benchmark-{benchmark}.tsv",
-        template_bed="{benchmark}/samsampleX-template.bed",
+        template_bed=lambda wc: (
+            f"{wc.benchmark}/uniform-plot-template.bed"
+            if uses_uniform_samsample(wc.benchmark)
+            else f"{wc.benchmark}/samsampleX-template.bed"
+        ),
         source_bam="{benchmark}/source.bam",
         source_index="{benchmark}/source.bam.bai",
         tool_bams=get_plot_tool_bams,

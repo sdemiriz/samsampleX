@@ -1,4 +1,32 @@
 benchmarks:
+  wgs-uniform:
+    chr: "chr21"
+    start: 1
+    end: 46709982
+    seed: 42
+    n_replicates: 10
+
+    source: "HG002.GRCh38.300x.bam"
+    coefficient: 0.1
+
+    cpu: 2
+    mem_mb: 16384
+    time: "30:00"
+
+  wegs-uniform:
+    chr: "21"
+    start: 1
+    end: 48129895
+    seed: 42
+    n_replicates: 10
+
+    source: "HG002-WEGS-8P5X-R1.bam"
+    coefficient: 0.1
+
+    cpu: 2
+    mem_mb: 16384
+    time: "30:00"
+    
   wgs-chr21:
     chr: "chr21"
     start: 1
@@ -8,16 +36,25 @@ benchmarks:
 
     collapse: 0
     templates:
-      - "HG00157.bam"
+        - HG01363.bam
+        - HG01941.bam
+        - HG02122.bam
+        - HG02127.bam
+        - HG02291.bam
+        - HG02678.bam
+        - HG03593.bam
+        - HG03780.bam
+        - HG03965.bam
+        - NA18547.bam
 
     mode: "mean"
     source: "HG002.GRCh38.300x.bam"
 
-    coefficient: 0.1413351716 # 11002091/77843971 mapped reads
+    coefficient: 0.1516005575
 
-    cpu: 1
+    cpu: 2
     mem_mb: 16384
-    time: "10:00"
+    time: "30:00"
 
   wegs-8p5x-chr21:
     chr: "chr21"
@@ -33,35 +70,45 @@ benchmarks:
     mode: "mean"
     source: "HG002.GRCh38.300x.bam"
 
-    coefficient: 0.04268109601 # 3322466/77843971 mapped reads
+    coefficient: 0.0387997079
 
-    cpu: 1
+    cpu: 2
     mem_mb: 16384
-    time: "10:00"
+    time: "30:00"
 
-  wgs-hla-a:
-    chr: "chr6"
-    start: 29941260
-    end: 29949572
+  wgs-brca1:
+    chr: "chr17"
+    start: 43044295
+    end: 43170245
     seed: 42
     n_replicates: 10
 
     collapse: 0
     templates:
-      - "HG00157.bam"
+      - HG01363.bam
+      - HG01941.bam
+      - HG02122.bam
+      - HG02127.bam
+      - HG02291.bam
+      - HG02678.bam
+      - HG03593.bam
+      - HG03780.bam
+      - HG03965.bam
+      - NA18547.bam
+
     mode: "mean"
     source: "HG002.GRCh38.300x.bam"
 
-    coefficient: 0.09218636093 # 1391/15089 mapped reads
+    coefficient: 0.1302768796
 
-    cpu: 1
+    cpu: 2
     mem_mb: 16384
-    time: "10:00"
+    time: "30:00"
 
-  wegs-8p5x-hla-a:
-    chr: "chr6"
-    start: 29941260
-    end: 29949572
+  wegs-8p5x-brca1:
+    chr: "chr17"
+    start: 43044295
+    end: 43170245
     seed: 42
     n_replicates: 10
 
@@ -72,8 +119,203 @@ benchmarks:
     mode: "mean"
     source: "HG002.GRCh38.300x.bam"
 
-    coefficient: 0.05414540394 # 817/15089
+    coefficient: 0.0693603
 
-    cpu: 1
+    cpu: 2
     mem_mb: 16384
-    time: "10:00"
+    time: "30:00"
+
+  wgs-tp53:
+    chr: "chr17"
+    start: 7661779
+    end: 7687538
+    seed: 42
+    n_replicates: 10
+
+    collapse: 0
+    templates:
+      - HG01363.bam
+      - HG01941.bam
+      - HG02122.bam
+      - HG02127.bam
+      - HG02291.bam
+      - HG02678.bam
+      - HG03593.bam
+      - HG03780.bam
+      - HG03965.bam
+      - NA18547.bam
+
+    mode: "mean"
+    source: "HG002.GRCh38.300x.bam"
+
+    coefficient: 0.1401488970
+
+    cpu: 2
+    mem_mb: 16384
+    time: "30:00"
+
+  wegs-8p5x-tp53:
+    chr: "chr17"
+    start: 7661779
+    end: 7687538
+    seed: 42
+    n_replicates: 10
+
+    collapse: 0
+    templates:
+      - "HG002-WEGS-8P5X-R1.bam"
+
+    mode: "mean"
+    source: "HG002.GRCh38.300x.bam"
+
+    coefficient: 0.28871
+
+    cpu: 2
+    mem_mb: 16384
+    time: "30:00"
+
+  wgs-hla-a:
+    chr: "chr6"
+    start: 29941260
+    end: 29945884
+    seed: 42
+    n_replicates: 10
+
+    collapse: 0
+    templates:
+        - HG01363.bam
+        - HG01941.bam
+        - HG02122.bam
+        - HG02127.bam
+        - HG02291.bam
+        - HG02678.bam
+        - HG03593.bam
+        - HG03780.bam
+        - HG03965.bam
+        - NA18547.bam
+    mode: "mean"
+    source: "HG002.GRCh38.300x.bam"
+
+    coefficient: 0.0782470841
+
+    cpu: 2
+    mem_mb: 16384  
+    time: "30:00"
+
+  wegs-8p5x-hla-a:
+    chr: "chr6"
+    start: 29941260
+    end: 29945884
+    seed: 42
+    n_replicates: 10
+
+    collapse: 0
+    templates:
+      - "HG002-WEGS-8P5X-R1.bam"
+
+    mode: "mean"
+    source: "HG002.GRCh38.300x.bam"
+
+    coefficient: 0.0613747
+
+    cpu: 2
+    mem_mb: 16384
+    time: "30:00"
+
+  wgs-brca1:
+    chr: "chr17"
+    start: 43044295
+    end: 43170245
+    seed: 42
+    n_replicates: 10
+
+    collapse: 0
+    templates:
+      - HG01363.bam
+      - HG01941.bam
+      - HG02122.bam
+      - HG02127.bam
+      - HG02291.bam
+      - HG02678.bam
+      - HG03593.bam
+      - HG03780.bam
+      - HG03965.bam
+      - NA18547.bam
+
+    mode: "mean"
+    source: "HG002.GRCh38.300x.bam"
+
+    coefficient: 0.1302768796
+
+    cpu: 2
+    mem_mb: 16384
+    time: "30:00"
+
+  wegs-8p5x-brca1:
+    chr: "chr17"
+    start: 43044295
+    end: 43170245
+    seed: 42
+    n_replicates: 10
+
+    collapse: 0
+    templates:
+      - "HG002-WEGS-8P5X-R1.bam"
+
+    mode: "mean"
+    source: "HG002.GRCh38.300x.bam"
+
+    coefficient: 0.0693603
+
+    cpu: 2
+    mem_mb: 16384
+    time: "30:00"
+
+  wgs-tp53:
+    chr: "chr17"
+    start: 7661779
+    end: 7687538
+    seed: 42
+    n_replicates: 10
+
+    collapse: 0
+    templates:
+      - HG01363.bam
+      - HG01941.bam
+      - HG02122.bam
+      - HG02127.bam
+      - HG02291.bam
+      - HG02678.bam
+      - HG03593.bam
+      - HG03780.bam
+      - HG03965.bam
+      - NA18547.bam
+
+    mode: "mean"
+    source: "HG002.GRCh38.300x.bam"
+
+    coefficient: 0.1401488970
+
+    cpu: 2
+    mem_mb: 16384
+    time: "30:00"
+
+  wegs-8p5x-tp53:
+    chr: "chr17"
+    start: 7661779
+    end: 7687538
+    seed: 42
+    n_replicates: 10
+
+    collapse: 0
+    templates:
+      - "HG002-WEGS-8P5X-R1.bam"
+
+    mode: "mean"
+    source: "HG002.GRCh38.300x.bam"
+
+    coefficient: 0.28871
+
+    cpu: 2
+    mem_mb: 16384
+    time: "30:00"
