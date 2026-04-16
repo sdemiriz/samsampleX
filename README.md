@@ -1,16 +1,14 @@
 # samsampleX
-A Python-based tool for customizable BAM file downsampling. Sample reads from a source BAM file to match the depth of coverage distribution of one or more template BAM file(s).
+A Python-based tool for dynamic BAM file downsampling, unlike existing tools that only downsample uniformly, based on a single global fraction value. Sample reads from a source BAM file to match the depth of coverage distribution of one or more template BAM file(s) through a created BED template.
 
 ## Features:
-- Reproducable, deterministic downsampling using integer seeds.
-- Uniform sampling mode: retain a fixed fraction of reads by hash, bypassing template/depth logic.
-- Map depth from multiple BAM files to a single BED template using combine modes (`min`, `max`, `mean`, `median`, `random`).
-- Aggregate depth selection using multiple BED templates via select metrics (`min`, `max`, `mean`, `random`).
-- BED template compression and/or smoothing.
+- Reproducable, integer seed-based deterministic downsampling
+- Uniform sampling mode: retain a fixed fraction of reads, feature parity with existing tools.
+- Map depth from multiple BAM files to a single BED template via common aggregation statistics (`min`, `max`, `mean`, `median`, `random`).
 - Calculation of quality metrics:
-    - Wasserstein distance: distribution-wide downsampling performance.
-    - Total Variation: per-base downsampling performance.
-- Depth comparison plotting for visual sampling comparisons, with the option to emit a TSV file of the same data instead.
+    - First-order Wasserstein distance (W1): evaluate changes in distribution shape (per-base normalized).
+    - Total Variation (TV): difference between downsampling result and template (per-base normalized).
+- Plotting for visual sampling comparisons, with an option to emit a TSV file of the same data instead.
 
 ## Installation
 ### Requirements
@@ -51,12 +49,12 @@ samsampleX map \
 | `--template-bam FILE [FILE ...]` | Input BAM file(s) (required) | - |
 | `--region REGION` | Target region, samtools-style (required) | - |
 | `--out-bed FILE` | Output BED file | `out.bed` |
-| `--collapse INT` | Merge consecutive positions with depth diff <= INT | `0` (per-position) |
-| `--mode MODE` | Combine mode when multiple BAMs: `min`, `max`, `mean`, `median`, `random` | `mean` |
+| `--collapse INT` | Merge consecutive positions with depth diff <= INT | `0` |
+| `--mode MODE` | Combine mode when multiple BAMs: `min`, `mean`, `median`, `max`, `random` | `mean` |
 | `--seed INT` | Random seed for `--mode random` | `42` |
 
 ### Sampling
-Downsample BAM based on provided BED template(s), using selected metric if multiple BEDs provided. Alternatively, use `--uniform` for position-independent uniform sampling by read-name hash.
+Downsample BAM based on provided BED template, using selected metric if multiple BEDs provided. Alternatively, use `--uniform` for position-independent uniform sampling similar to existing tools.
 
 **Depth-based sampling (template required):**
 ```bash
@@ -79,22 +77,22 @@ Retains approximately 50% of reads uniformly across the region.
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--source-bam FILE` | Input BAM to sample from (required) | - |
-| `--template-bed FILE` | Template BED file(s); required unless `--uniform` is used | - |
-| `--uniform FRACTION` | Uniform sampling: retain fraction of reads by hash (0–1). Bypasses template/depth logic. | - |
+| `--source-bam FILE` | Input BAM to sample reads from (required) | - |
+| `--template-bed FILE` | Template BED file; required unless `--uniform` is used | - |
+| `--uniform FRACTION` | Uniform sampling: retain fraction of reads. Bypasses template-based downsampling. | - |
 | `--region REGION` | Target region, samtools-style (required) | - |
-| `--out-bam FILE` | Output BAM file | `out.bam` |
-| `--mode MODE` | Combine mode for multiple templates: `min`, `max`, `mean`, `random` | `random` |
-| `--stat STAT` | Statistic for summarising ratio over read span: `mean`, `min`, `max`, `median` | `mean` |
+| `--out-bam FILE` | Output BAM file to write reads to | `out.bam` |
+| `--mode MODE` | Combine mode for multiple templates: `min`, `mean`, `max`, `random` | `random` |
+| `--stat STAT` | Statistic for summarising ratio over read span: `min`, `mean`, `median`, `max` | `mean` |
 | `--seed INT` | Random seed for reproducibility | `42` |
 | `--no-metrics` | Skip metrics calculation after sampling | false |
 
 ### Plotting
 Compare depth of coverage between source, template, and output BAM files. Output either as PNG plot or TSV data.
 
-Blue is source, green is template and red is output depth.
+Green is source, orange is template and blue is output depth.
 
-TSV contains a column for `position`, and three for respective depths of source, template and output.
+TSV contains one column for `position`, and three for respective depths of source, template and output.
 ```bash
 # Generate PNG plot
 samsampleX plot \
@@ -116,6 +114,8 @@ samsampleX plot \
 | `--out-tsv FILE` | Output TSV data (mutually exclusive with --out-png) | - |
 
 ### Mapback
+**If you do not use HLA\*LA and its specific read processing method, feel free to ignore this section.**
+
 Remap HLA\*LA PRG-mapped reads back to canonical chr6 coordinates. This is a preprocessing step for BAM files produced by HLA\*LA, which maps reads to a pangenome reference graph (PRG) with synthetic contig names (`PRG_1`, `PRG_2`, ...). The mapback subcommand translates these back to chr6 positions using the HLA\*LA `sequences.txt` file and known HLA gene / alt contig boundaries.
 
 The output BAM can then be used as input to `sample` for depth-aware downsampling on chr6.
@@ -140,12 +140,12 @@ samsampleX sample \
 |--------|-------------|---------|
 | `--source-bam FILE` | HLA\*LA-remapped BAM file (required) | - |
 | `--region REGION` | Target region on chr6, samtools-style (required) | - |
-| `--out-bam FILE` | Output BAM file | `out.mapback.bam` |
+| `--out-bam FILE` | Output BAM file | `out.bam` |
 | `--genome-build BUILD` | Reference genome build: `GRCh38` or `GRCh37` (required) | - |
 | `--prg-seq FILE` | Path to HLA\*LA `sequences.txt` | `HLA-LA/graphs/PRG_MHC_GRCh38_withIMGT/sequences.txt` |
 
 ### Stats
-Compare depth distributions between two BAM files over a given region. Reports mean depth for each BAM, Total Variation distance, and normalised Wasserstein-1 distance.
+Compare depth distributions between two BAM files over a given region. Reports mean depth for each BAM, per-base normalized Total Variation distance, and per-base normalized Wasserstein-1 distance.
 ```bash
 samsampleX stats \
     --bam-a template.bam \
@@ -163,7 +163,7 @@ samsampleX stats \
 
 ![Example plot results](examples/example-plot.png)
 
-The following commands showcase an example workflow of a short, arbitrary region on chromosome 21. Three Thousand Genomes 30X WGS samples are downloaded and mapped to a template, then used to downsample a GIAB 300X WGS sample in the same region. The results are finally displayed on a plot.
+The following commands showcase an example workflow of a short, arbitrary region on chromosome 21. Three 1000 Genomes Project 30X WGS samples are downloaded and mapped to a template, then used to downsample a GIAB 300X WGS sample in the same region. The results are finally displayed on a plot.
 
 
 ```bash
@@ -214,7 +214,7 @@ samsampleX plot \
 
 ## Testing
 
-A `pytest` test suite is available. Run using the `-v` flag for a detailed report.
+A `pytest` test suite is available. Run with the `-v` flag for a detailed report.
 ```bash
 pytest -v
 ```
@@ -224,29 +224,29 @@ pytest -v
 ### Mapping
 1. Parse target region from first BAM header
 2. Compute per-position depth of coverage for each BAM over the region
-3. If multiple BAMs: combine depths per-position using `--mode` (min, max, mean, median, or random)
-4. Write to BED4 format (`chrom`, `start`, `end`, `depth` columns)
-5. Optionally collapse consecutive similar depths (`--collapse`)
+3. If multiple BAMs: combine depths per-position using `--mode` (min, mean, median, max, or random)
+4. Optionally collapse consecutive similar depths (`--collapse`)
+5. Write to BED4 format (`chrom`, `start`, `end`, `depth` columns)
 
 ### Sampling
-1. **Uniform mode** (`--uniform FRACTION`): Skip template/depth logic. For each read, hash the read name with xxHash32 to get $f_{read} \in [0, 1)$; keep if $f_{read} < FRACTION$. Deterministic and position-independent.
+1. **Uniform mode** (`--uniform FRACTION`): Skip template downsampling. For each read, hash the read name with xxHash32 to get $f_{read} \in [0, 1)$; keep if $f_{read} < FRACTION$. Deterministic and position-independent.
 2. **Depth-based mode**: Load template depths from BED file(s); if multiple templates are provided, combine them per-position using the selected `--mode`
 3. Compute source depths from BAM
-4. Calculate per-position sampling ratio: $ratio(i) = \min(1,\; depth_{template}(i) \;/\; depth_{source}(i))$
-   - Positions where the template depth meets or exceeds the source depth get ratio 1.0 (keep all reads)
-   - Positions with zero source depth get ratio 0.0
-5. Build a cumulative sum of the ratio array for O(1) range queries
+4. Calculate per-position sampling coefficient: $ratio(i) = \min(1,\; depth_{template}(i) \;/\; depth_{source}(i))$
+   - Positions where the template depth meets or exceeds the source depth get coefficient 1.0 (keep all reads)
+   - Positions with zero source depth get coefficient 0.0
+5. Build a cumulative sum of the coefficient array for O(1) range queries
 6. For each read in the source BAM:
    - Hash read name with xxHash32 to produce a deterministic fraction $f_{read} \in [0, 1)$
-   - Summarise the ratio over the read's covered positions using `--stat` (default: mean via cumsum lookup)
+   - Summarise the coefficient over the read's covered positions using `--stat` (default: mean via cumsum lookup)
    - Keep the read if $f_{read} < ratio_{read}$
 7. Report metrics (depth-based mode only): Total Variation and Wasserstein-1 distance (unless `--no-metrics`)
 
 ## Metrics
 | Metric | Significance |
 | ------ | ------------ |
-| Wasserstein-1 Distance | Difference between depth distributions |
-| Total Variation | Per-position depth difference |
+| Wasserstein-1 Distance | Difference between depth distribution shapes |
+| Total Variation | Depth difference at each position |
 
 
 ## Benchmarking
@@ -275,7 +275,7 @@ benchmarks:             # all chunks should be children of this header
 
     coefficient: 0.1    # coefficient provided to GATK, samtools, sambamba
 
-    cpu: 1              # specify hardware resource (used by all steps)
+    cpu: 2              # specify hardware resource (used by all steps)
     mem_mb: 16384
     time: "10:00"
 ```
