@@ -11,6 +11,8 @@ build/
 *.tsv
 *.png
 *.sh
+*.gtf
+*.gz
 
 # Benchmark outputs
 benchmarks/.snakemake/
@@ -21,7 +23,7 @@ benchmarks/*.bai
 benchmarks/*.tsv
 benchmarks/*.bed
 benchmarks/*.sif
-
+*.stats
 # Editor files
 *.swp
 *~
