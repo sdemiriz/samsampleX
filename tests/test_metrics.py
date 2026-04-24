@@ -54,8 +54,8 @@ class TestTotalVariation:
     def test_known_value(self):
         a = np.array([10, 10, 10], dtype=np.int32)
         b = np.array([20, 20, 20], dtype=np.int32)
-        # TV = sum(|a-b|) / (2*n) = 30 / 6 = 5.0
-        assert _total_variation(a, b) == pytest.approx(5.0)
+        # Disjoint supports: |1-0| + |0-1| = 2 → TV = 1.0
+        assert _total_variation(a, b) == pytest.approx(1.0)
 
     def test_symmetric(self):
         a = np.array([5, 15, 25], dtype=np.int32)
@@ -65,8 +65,8 @@ class TestTotalVariation:
     def test_one_diff(self):
         a = np.array([10, 10, 10, 10], dtype=np.int32)
         b = np.array([10, 10, 10, 20], dtype=np.int32)
-        # TV = 10 / (2*4) = 1.25
-        assert _total_variation(a, b) == pytest.approx(1.25)
+        # p_a(10)=1, p_b(10)=3/4; p_a(20)=0, p_b(20)=1/4 → (1/2)(1/4+1/4)=0.25
+        assert _total_variation(a, b) == pytest.approx(0.25)
 
 
 # ── metrics_calculate ────────────────────────────────────────────────────────

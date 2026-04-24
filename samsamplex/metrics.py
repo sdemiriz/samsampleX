@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from collections import Counter
 from dataclasses import dataclass
 
 import numpy as np
@@ -45,11 +46,18 @@ def _wasserstein(a: np.ndarray, b: np.ndarray) -> float:
 
 
 def _total_variation(a: np.ndarray, b: np.ndarray) -> float:
-    """Total Variation distance: (1/2) * mean(|a - b|)."""
-    n = len(a)
-    if n == 0:
+    """Total Variation distance between empirical distributions of *a* and *b*.
+
+    For PMFs p(x) = count(x)/n over each multiset, TV = (1/2) * sum_x |p_a(x) - p_b(x)|.
+    """
+    n1, n2 = len(a), len(b)
+    if n1 == 0 or n2 == 0:
         return 0.0
-    return float(np.sum(np.abs(a.astype(np.float64) - b.astype(np.float64))) / (2.0 * n))
+    c1, c2 = Counter(a), Counter(b)
+    all_vals = c1.keys() | c2.keys()
+    return float(
+        sum(abs(c1.get(x, 0) / n1 - c2.get(x, 0) / n2) for x in all_vals) / 2
+    )
 
 
 def metrics_calculate(depth_a: DepthArray, depth_b: DepthArray) -> MetricsResult:
