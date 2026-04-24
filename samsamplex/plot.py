@@ -110,13 +110,17 @@ def write_png(
     ax.grid(True, which="major", axis="y", color="gray", alpha=0.5, linestyle="-", linewidth=1)
 
     ax.tick_params(axis="y", length=0)
-    ax.set_xlabel(f"Position on {region_contig}")
-    ax.set_ylabel("Depth")
-    ax.set_title("Depth of coverage")
+    xlabel = (
+        f"Position on {region_contig} (Mbp)"
+        if float(np.max(genomic_pos)) >= 1e6
+        else f"Position on {region_contig}"
+    )
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel("Depth of coverage")
 
     # Custom x-axis formatter for large values (e.g. millions)
     def _custom_formatter(x, pos):
-        return f"{x/1e6:.3f}m" if x >= 1e6 else f"{x:.0f}"
+        return f"{x/1e6:.3f}" if x >= 1e6 else f"{x:.0f}"
 
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(_custom_formatter))
     ax.xaxis.set_major_locator(mticker.LinearLocator(numticks=5))
