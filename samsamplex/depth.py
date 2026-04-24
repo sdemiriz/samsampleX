@@ -110,9 +110,6 @@ def depth_from_bam(
         depths = np.zeros(end - start, dtype=np.int32)
 
         for read in bam.fetch(resolved, start, end):
-            if read.flag & (0x4 | 0x100 | 0x200 | 0x400):
-                # FUNMAP | FSECONDARY | FQCFAIL | FDUP
-                continue
 
             r_start = read.reference_start
             r_end = read.reference_end
