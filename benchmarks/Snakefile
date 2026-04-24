@@ -5,6 +5,9 @@ from textwrap import dedent
 
 BENCHMARKS = list(config["benchmarks"].keys())
 
+# Significant figures for aggregated benchmark TSV numeric columns (see params.sigfigs on summary rules).
+BENCHMARK_OUTPUT_SIGFIGS = 3
+
 # Subset of tool names used as {tool} wildcard in index_output_bam / compare_stats.
 TOOL_PATTERN = (
     "gatk-high-accuracy|gatk-constant-memory|gatk-chained|"
@@ -79,6 +82,21 @@ def get_templates(benchmark):
     return config["benchmarks"][benchmark]["templates"]
 
 
+def format_float_sigfigs(x, sigfigs: int) -> str:
+    """Format numeric values for summary TSVs using *sigfigs* significant digits (.ng)."""
+    if isinstance(x, bool):
+        return str(x)
+    if isinstance(x, (int, float)):
+        xf = float(x)
+        if xf != xf:  # NaN
+            return "NA"
+        n = int(sigfigs)
+        if n <= 0:
+            return repr(xf)
+        return format(xf, f".{n}g")
+    return str(x)
+
+
 SNAKE_DIR = os.path.dirname(workflow.snakefile)
 SAMSAMPLEX_ROOT = os.path.normpath(os.path.join(SNAKE_DIR, ".."))
 
@@ -96,10 +114,28 @@ def get_plot_tool_bams(wildcards):
     ]
 
 
+UNIFORM_BENCHMARKS = [b for b in BENCHMARKS if uses_uniform_samsample(b)]
+
+
+def get_uniform_pairwise_pairstat_paths(benchmark):
+    """Ordered tool×tool×seed pairstats paths; empty if not a uniform benchmark."""
+    if not uses_uniform_samsample(benchmark):
+        return []
+    tools = get_comparison_tools(benchmark)
+    seeds = get_seeds(benchmark)
+    return [
+        f"{benchmark}/pairstats/{ta}.vs.{tb}.seed{s}.stats"
+        for ta in tools
+        for tb in tools
+        for s in seeds
+    ]
+
+
 rule all:
     input:
         expand("benchmark-{benchmark}.tsv", benchmark=BENCHMARKS),
         expand("{benchmark}/{benchmark}-comparison.png", benchmark=BENCHMARKS),
+        expand("{benchmark}/stats_pairwise_matrix.tsv", benchmark=UNIFORM_BENCHMARKS),
 
 rule preprocess_source:
     input:
@@ -464,6 +500,114 @@ rule compare_stats_uniform_pairwise:
             2> {output.stats}
         """
 
+
+# Uniform only: BAM A = tool_a, B = tool_b (filename matches samsampleX stats orientation).
+rule compare_stats_uniform_ordered_pair:
+    input:
+        bam_a="{benchmark}/{tool_a}.seed{seed}.bam",
+        index_a="{benchmark}/{tool_a}.seed{seed}.bam.bai",
+        bam_b="{benchmark}/{tool_b}.seed{seed}.bam",
+        index_b="{benchmark}/{tool_b}.seed{seed}.bam.bai",
+    params:
+        region=lambda wc: get_region(wc.benchmark),
+    wildcard_constraints:
+        seed=r"\d+",
+        tool_a=TOOL_PATTERN,
+        tool_b=TOOL_PATTERN,
+    output:
+        stats="{benchmark}/pairstats/{tool_a}.vs.{tool_b}.seed{seed}.stats",
+    resources:
+        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
+        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
+        time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
+    shell:
+        """
+        mkdir -p $(dirname {output.stats})
+        samsampleX stats \
+            --bam-a {input.bam_a} \
+            --bam-b {input.bam_b} \
+            --region {params.region} \
+            2> {output.stats}
+        """
+
+
+rule uniform_pairwise_metrics_matrix:
+    input:
+        pairstats=lambda wc: get_uniform_pairwise_pairstat_paths(wc.benchmark),
+    output:
+        matrix="{benchmark}/stats_pairwise_matrix.tsv",
+    params:
+        sigfigs=BENCHMARK_OUTPUT_SIGFIGS,
+    run:
+        import re
+        import statistics
+
+        sf = int(params.sigfigs)
+        if not uses_uniform_samsample(wildcards.benchmark):
+            raise ValueError(
+                f"stats_pairwise_matrix.tsv is only produced for uniform benchmarks, not {wildcards.benchmark!r}"
+            )
+
+        def parse_stats_file(filepath):
+            data = {}
+            with open(filepath) as f:
+                for line in f:
+                    line = line.strip()
+                    if "Total Variation:" in line:
+                        match = re.search(r"([\d.]+)\s*$", line)
+                        if match:
+                            data["tv"] = float(match.group(1))
+                    elif "Wasserstein" in line:
+                        match = re.search(r"([\d.]+)\s*$", line)
+                        if match:
+                            data["wasserstein"] = float(match.group(1))
+            return data
+
+        tools = get_comparison_tools(wildcards.benchmark)
+        seeds = get_seeds(wildcards.benchmark)
+        # (tool_a, tool_b) -> list of {tv, wasserstein}
+        by_pair = {(ta, tb): [] for ta in tools for tb in tools}
+        for ta in tools:
+            for tb in tools:
+                for seed in seeds:
+                    fp = f"{wildcards.benchmark}/pairstats/{ta}.vs.{tb}.seed{seed}.stats"
+                    parsed = parse_stats_file(fp)
+                    if parsed:
+                        by_pair[(ta, tb)].append(parsed)
+
+        def mean_std(values):
+            values = [v for v in values if v is not None]
+            if not values:
+                return None, None
+            m = statistics.mean(values)
+            s = statistics.stdev(values) if len(values) > 1 else 0.0
+            return m, s
+
+        def format_cell(tv_list, w_list):
+            tvm, tvs = mean_std(tv_list)
+            w1m, w1s = mean_std(w_list)
+            if tvm is None or w1m is None:
+                return "NA"
+            return (
+                f"{format_float_sigfigs(tvm, sf)} ({format_float_sigfigs(tvs, sf)}) | "
+                f"{format_float_sigfigs(w1m, sf)} ({format_float_sigfigs(w1s, sf)})"
+            )
+
+        with open(output.matrix, "w") as out:
+            header = [""] + tools
+            out.write("\t".join(header) + "\n")
+            for ta in tools:
+                row_cells = [ta]
+                for tb in tools:
+                    rows = by_pair.get((ta, tb), [])
+                    tv_vals = [r.get("tv") for r in rows]
+                    w_vals = [r.get("wasserstein") for r in rows]
+                    row_cells.append(format_cell(tv_vals, w_vals))
+                out.write("\t".join(row_cells) + "\n")
+
+
 def get_all_benchmark_files(benchmark, pattern):
     seeds = get_seeds(benchmark)
     return [pattern.format(benchmark=benchmark, seed=s) for s in seeds]
@@ -524,9 +668,13 @@ rule results_summary:
         results="{benchmark}/results.tsv"
     output:
         summary="{benchmark}/results_summary.tsv"
+    params:
+        sigfigs=BENCHMARK_OUTPUT_SIGFIGS,
     run:
         import statistics
-        
+
+        sf = int(params.sigfigs)
+
         def parse_numeric(val):
             if not val or val == "NA":
                 return None
@@ -558,8 +706,12 @@ rule results_summary:
                 values = [v for v in values if v is not None]
                 
                 if values:
-                    summary[f'{col}_mean'] = f"{statistics.mean(values):.4f}"
-                    summary[f'{col}_std'] = f"{statistics.stdev(values):.4f}" if len(values) > 1 else "NA"
+                    summary[f'{col}_mean'] = format_float_sigfigs(statistics.mean(values), sf)
+                    summary[f'{col}_std'] = (
+                        format_float_sigfigs(statistics.stdev(values), sf)
+                        if len(values) > 1
+                        else "NA"
+                    )
                 else:
                     summary[f'{col}_mean'] = "NA"
                     summary[f'{col}_std'] = "NA"
@@ -591,10 +743,14 @@ rule stats_summary:
         ),
     output:
         summary="{benchmark}/stats_summary.tsv"
+    params:
+        sigfigs=BENCHMARK_OUTPUT_SIGFIGS,
     run:
         import re
         import statistics
-        
+
+        sf = int(params.sigfigs)
+
         def parse_stats_file(filepath):
             data = {}
             with open(filepath) as f:
@@ -673,19 +829,107 @@ rule stats_summary:
                 for h in headers:
                     val = row.get(h, 'NA')
                     if isinstance(val, float):
-                        values.append(f"{val:.6f}")
+                        values.append(format_float_sigfigs(val, sf))
                     else:
                         values.append(str(val))
                 out.write('\t'.join(values) + '\n')
 
 
+rule samtools_depth_summary:
+    """Per-tool mean of per-base depths (samtools depth) per seed; aggregate mean/std across seeds."""
+    input:
+        lambda wc: (
+            [
+                f"{wc.benchmark}/{tool}.seed{seed}.bam"
+                for tool in get_comparison_tools(wc.benchmark)
+                for seed in get_seeds(wc.benchmark)
+            ]
+            + [
+                f"{wc.benchmark}/{tool}.seed{seed}.bam.bai"
+                for tool in get_comparison_tools(wc.benchmark)
+                for seed in get_seeds(wc.benchmark)
+            ]
+        ),
+    output:
+        summary="{benchmark}/samtools_depth_summary.tsv"
+    params:
+        sigfigs=BENCHMARK_OUTPUT_SIGFIGS,
+    resources:
+        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
+        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
+        time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
+    run:
+        import math
+        import statistics
+        import subprocess
+
+        sf = int(params.sigfigs)
+        benchmark = wildcards.benchmark
+        region = get_region(benchmark)
+        tools = get_comparison_tools(benchmark)
+        seeds = get_seeds(benchmark)
+
+        def mean_depth_one_bam(bam_path):
+            p = subprocess.Popen(
+                ["samtools", "depth", "-r", region, bam_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            total = 0
+            n = 0
+            for line in p.stdout:
+                parts = line.rstrip().split("\t")
+                if len(parts) >= 3:
+                    total += int(parts[2])
+                    n += 1
+            err = p.stderr.read()
+            rc = p.wait()
+            if rc != 0:
+                raise RuntimeError(f"samtools depth failed for {bam_path}: {err!r}")
+            if n == 0:
+                return None
+            return total / n
+
+        rows_out = []
+        for tool in tools:
+            per_seed = []
+            for seed in seeds:
+                bam = f"{benchmark}/{tool}.seed{seed}.bam"
+                m = mean_depth_one_bam(bam)
+                if m is not None:
+                    per_seed.append(m)
+            if per_seed:
+                dm = statistics.mean(per_seed)
+                ds = statistics.stdev(per_seed) if len(per_seed) > 1 else 0.0
+            else:
+                dm, ds = float("nan"), float("nan")
+            rows_out.append((tool, dm, ds))
+
+        with open(output.summary, "w") as out:
+            out.write("tool\tdepth_mean\tdepth_std\n")
+            for tool, dm, ds in rows_out:
+                if math.isnan(dm):
+                    out.write(f"{tool}\tNA\tNA\n")
+                else:
+                    out.write(
+                        f"{tool}\t{format_float_sigfigs(dm, sf)}\t{format_float_sigfigs(ds, sf)}\n"
+                    )
+
+
 rule consolidated_summary:
     input:
         runtime="{benchmark}/results_summary.tsv",
-        accuracy="{benchmark}/stats_summary.tsv"
+        accuracy="{benchmark}/stats_summary.tsv",
+        depth="{benchmark}/samtools_depth_summary.tsv",
     output:
         consolidated="benchmark-{benchmark}.tsv"
+    params:
+        sigfigs=BENCHMARK_OUTPUT_SIGFIGS,
     run:
+        sf = int(params.sigfigs)
         runtime_data = {}
         with open(input.runtime) as f:
             header = f.readline().strip().split('\t')
@@ -733,25 +977,72 @@ rule consolidated_summary:
                     'w1_mean': fields[col_idx.get('wasserstein_mean', -1)],
                     'w1_std': fields[col_idx.get('wasserstein_std', -1)],
                 }
-        
+
+        depth_data = {}
+        with open(input.depth) as f:
+            f.readline()
+            for line in f:
+                if not line.strip():
+                    continue
+                fields = line.strip().split('\t')
+                if len(fields) >= 3:
+                    depth_data[fields[0]] = {'mean': fields[1], 'std': fields[2]}
+
+        coeff_val = float(get_config(wildcards.benchmark, "coefficient"))
+        coeff_str = format_float_sigfigs(coeff_val, sf)
+
+        def depth_cell(label):
+            key = label[len("samsampleX-vs-"):] if label.startswith("samsampleX-vs-") else label
+            d = depth_data.get(key)
+            if not d or d.get("mean") in ("NA", ""):
+                return "NA"
+            try:
+                return (
+                    f"{format_float_sigfigs(float(d['mean']), sf)} "
+                    f"({format_float_sigfigs(float(d['std']), sf)})"
+                )
+            except (ValueError, TypeError):
+                return "NA"
+
         def format_consolidated_row(tool, rt, acc):
             try:
-                wall_str = f"{float(rt['wall_mean']):.2f} ({float(rt['wall_std']):.2f})"
+                wm, ws = float(rt["wall_mean"]), float(rt["wall_std"])
+                wall_str = f"{format_float_sigfigs(wm, sf)} ({format_float_sigfigs(ws, sf)})"
             except (ValueError, TypeError):
                 wall_str = f"{rt['wall_mean']} ({rt['wall_std']})"
-            mem_str = f"{rt['mem_mean_gb']:.2f} ({rt['mem_std_gb']:.2f})"
+            mem_str = (
+                f"{format_float_sigfigs(rt['mem_mean_gb'], sf)} "
+                f"({format_float_sigfigs(rt['mem_std_gb'], sf)})"
+            )
+            d_str = depth_cell(tool)
             try:
-                tv_str = f"{float(acc.get('tv_mean', 'NA')):.4f} ({float(acc.get('tv_std', 'NA')):.4f})"
+                tm, ts = acc.get("tv_mean"), acc.get("tv_std")
+                if tm in (None, "", "NA") or ts in (None, "", "NA"):
+                    tv_str = "NA"
+                else:
+                    tv_str = (
+                        f"{format_float_sigfigs(float(tm), sf)} "
+                        f"({format_float_sigfigs(float(ts), sf)})"
+                    )
             except (ValueError, TypeError):
                 tv_str = "NA"
             try:
-                w1_str = f"{float(acc.get('w1_mean', 'NA')):.4f} ({float(acc.get('w1_std', 'NA')):.4f})"
+                wm1, ws1 = acc.get("w1_mean"), acc.get("w1_std")
+                if wm1 in (None, "", "NA") or ws1 in (None, "", "NA"):
+                    w1_str = "NA"
+                else:
+                    w1_str = (
+                        f"{format_float_sigfigs(float(wm1), sf)} "
+                        f"({format_float_sigfigs(float(ws1), sf)})"
+                    )
             except (ValueError, TypeError):
                 w1_str = "NA"
-            return f"{tool}\t{wall_str}\t{mem_str}\t{tv_str}\t{w1_str}\n"
+            return f"{tool}\t{wall_str}\t{mem_str}\t{coeff_str}\t{d_str}\t{tv_str}\t{w1_str}\n"
 
         with open(output.consolidated, 'w') as out:
-            out.write("Tool\tWall Clock (s)\tMemory (GB)\tTV\tNorm. W1\n")
+            out.write(
+                "Tool\tWall Clock (s)\tMemory (GB)\tCoefficient\tDepth (samtools)\tTV\tNorm. W1\n"
+            )
             if uses_uniform_samsample(wildcards.benchmark):
                 competitors = get_non_samsamplex_comparison_tools(wildcards.benchmark)
                 samx_rt = runtime_data.get(
@@ -771,6 +1062,16 @@ rule consolidated_summary:
                 )
                 for tool in sorted_comp:
                     out.write(format_consolidated_row(tool, runtime_data[tool], {}))
+                # Standalone samsampleX row: own wall/mem, coefficient, samtools depth on
+                # samsampleX-uniform BAMs (vs-* rows above use ref-tool depth only).
+                if "samsampleX-uniform" in runtime_data:
+                    out.write(
+                        format_consolidated_row(
+                            "samsampleX-uniform",
+                            runtime_data["samsampleX-uniform"],
+                            {},
+                        )
+                    )
                 for ref_tool in competitors:
                     label = f"samsampleX-vs-{ref_tool}"
                     out.write(
