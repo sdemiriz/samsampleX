@@ -70,6 +70,15 @@ def get_stats_reference_bam(benchmark):
 def get_config(benchmark, key):
     return config["benchmarks"][benchmark][key]
 
+
+def get_map_mode(benchmark):
+    return get_config(benchmark, "map_mode")
+
+
+def get_sample_mode(benchmark):
+    return get_config(benchmark, "sample_mode")
+
+
 def get_seeds(benchmark):
     cfg = config["benchmarks"][benchmark]
     return [cfg["seed"] + i for i in range(1, cfg["n_replicates"] + 1)]
@@ -295,7 +304,7 @@ rule sambamba:
         """
 
 rule samsampleX_map:
-    """One BED template: combine depth from all configured template BAMs (same mode as sample)."""
+    """One BED template: combine depth from all configured template BAMs (map_mode from config)."""
     input:
         template_bams=lambda wc: get_templates(wc.benchmark),
         source="{benchmark}/source.bam",
@@ -303,7 +312,7 @@ rule samsampleX_map:
     params:
         region=lambda wc: get_region(wc.benchmark),
         collapse=lambda wc: get_config(wc.benchmark, "collapse"),
-        mode=lambda wc: get_config(wc.benchmark, "mode"),
+        map_mode=lambda wc: get_map_mode(wc.benchmark),
         map_seed=lambda wc: get_config(wc.benchmark, "seed"),
     output:
         bed="{benchmark}/samsampleX-template.bed",
@@ -321,7 +330,7 @@ rule samsampleX_map:
         --template-bam {input.template_bams} \
         --region {params.region} \
         --collapse {params.collapse} \
-        --mode {params.mode} \
+        --mode {params.map_mode} \
         --seed {params.map_seed} \
         --out-bed {output.bed}
         """
@@ -333,7 +342,7 @@ rule samsampleX_sampling:
         index="{benchmark}/source.bam.bai",
         template_bed="{benchmark}/samsampleX-template.bed",
     params:
-        mode=lambda wc: get_config(wc.benchmark, "mode"),
+        sample_mode=lambda wc: get_sample_mode(wc.benchmark),
         region=lambda wc: get_region(wc.benchmark),
     wildcard_constraints:
         seed=r"\d+",
@@ -356,7 +365,7 @@ rule samsampleX_sampling:
         --no-metrics \
         --region {params.region} \
         --seed {wildcards.seed} \
-        --mode {params.mode}
+        --mode {params.sample_mode}
         """
 
 rule uniform_plot_template_bed:
