@@ -182,6 +182,13 @@ class TestBedCombineDepths:
         # integer division: (10+20)//2=15, (50+10)//2=30, (30+40)//2=35
         np.testing.assert_array_equal(result.depths, [15, 30, 35])
 
+    def test_mode_median(self):
+        a = self._make([10, 50, 30])
+        b = self._make([20, 10, 40])
+        result = bed_combine_depths([a, b], mode="median")
+        # np.rint(np.median([10, 20]))=15, median([50,10])=30, median([30,40])=35
+        np.testing.assert_array_equal(result.depths, [15, 30, 35])
+
     def test_mode_random_deterministic(self):
         a = self._make([10, 10, 10])
         b = self._make([20, 20, 20])

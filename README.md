@@ -4,7 +4,7 @@ A Python-based tool for dynamic BAM file downsampling, unlike existing tools tha
 ## Features:
 - Reproducable, integer seed-based deterministic downsampling
 - Uniform sampling mode: retain a fixed fraction of reads, feature parity with existing tools.
-- Map depth from multiple BAM files to a single BED template via common aggregation statistics (`min`, `max`, `mean`, `median`, `random`).
+- Map depth from multiple BAM files to a single BED template via common aggregation statistics (`min`, `mean`, `median`, `max`, `random`).
 - Calculation of quality metrics:
     - First-order Wasserstein distance (W1): evaluate changes in distribution shape (per-base normalized).
     - Total Variation (TV): difference between downsampling result and template (per-base normalized).
@@ -82,8 +82,8 @@ Retains approximately 50% of reads uniformly across the region.
 | `--uniform FRACTION` | Uniform sampling: retain fraction of reads. Bypasses template-based downsampling. | - |
 | `--region REGION` | Target region, samtools-style (required) | - |
 | `--out-bam FILE` | Output BAM file to write reads to | `out.bam` |
-| `--mode MODE` | Combine mode for multiple templates: `min`, `mean`, `max`, `random` | `random` |
-| `--stat STAT` | Statistic for summarising ratio over read span: `min`, `mean`, `median`, `max` | `mean` |
+| `--mode MODE` | Combine mode for multiple templates: `min`, `mean`, `median`, `max`, `random` | `random` |
+| `--stat STAT` | Statistic for summarising ratio over read span: `min`, `mean`, `median`, `max`, `random` | `mean` |
 | `--seed INT` | Random seed for reproducibility | `42` |
 | `--no-metrics` | Skip metrics calculation after sampling | false |
 
@@ -224,7 +224,7 @@ pytest -v
 ### Mapping
 1. Parse target region from first BAM header
 2. Compute per-position depth of coverage for each BAM over the region
-3. If multiple BAMs: combine depths per-position using `--mode` (min, mean, median, max, or random)
+3. If multiple BAMs: combine depths per-position using `--mode` (min, mean, median, max, random)
 4. Optionally collapse consecutive similar depths (`--collapse`)
 5. Write to BED4 format (`chrom`, `start`, `end`, `depth` columns)
 
@@ -238,7 +238,7 @@ pytest -v
 5. Build a cumulative sum of the coefficient array for O(1) range queries
 6. For each read in the source BAM:
    - Hash read name with xxHash32 to produce a deterministic fraction $f_{read} \in [0, 1)$
-   - Summarise the coefficient over the read's covered positions using `--stat` (default: mean via cumsum lookup)
+   - Summarise the coefficient over the read's covered positions using `--stat` (min, mean, median, max, random; default mean via cumsum for mean). `random` picks one overlap ratio from a deterministic index (read span + seed).
    - Keep the read if $f_{read} < ratio_{read}$
 7. Report metrics (depth-based mode only): Total Variation and Wasserstein-1 distance (unless `--no-metrics`)
 

@@ -10,6 +10,7 @@ from samsamplex.sample import (
     _get_mean_ratio,
     _get_median_ratio,
     _get_min_ratio,
+    _get_random_ratio,
     _xxh32_fraction,
 )
 
@@ -171,3 +172,28 @@ class TestGetMedianRatio:
     def test_no_overlap(self):
         ratios = np.array([0.5, 0.5])
         assert _get_median_ratio(ratios, 0, 2, 5, 10) == pytest.approx(0.0)
+
+
+# ── _get_random_ratio ────────────────────────────────────────────────────────
+
+
+class TestGetRandomRatio:
+    def test_deterministic(self):
+        ratios = np.array([0.1, 0.5, 0.9, 0.2], dtype=np.float64)
+        a = _get_random_ratio(ratios, 0, 4, 0, 4, seed=7)
+        b = _get_random_ratio(ratios, 0, 4, 0, 4, seed=7)
+        assert a == b
+
+    def test_value_from_slice(self):
+        ratios = np.array([0.1, 0.5, 0.9, 0.2], dtype=np.float64)
+        v = _get_random_ratio(ratios, 0, 4, 0, 4, seed=99)
+        assert v in {0.1, 0.5, 0.9, 0.2}
+
+    def test_partial_span(self):
+        ratios = np.array([0.1, 0.5, 0.9], dtype=np.float64)
+        v = _get_random_ratio(ratios, 0, 3, 1, 3, seed=1)
+        assert v in {0.5, 0.9}
+
+    def test_no_overlap(self):
+        ratios = np.array([0.5, 0.5])
+        assert _get_random_ratio(ratios, 0, 2, 5, 10, seed=0) == pytest.approx(0.0)

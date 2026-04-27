@@ -6,6 +6,7 @@ import argparse
 import sys
 
 from . import __version__
+from .modes import DEPTH_MODES
 
 
 def _add_map_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -30,7 +31,7 @@ def _add_map_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--mode",
         default="mean",
-        choices=("min", "max", "mean", "median", "random"),
+        choices=DEPTH_MODES,
         help="How to combine depths when multiple BAMs given [default: mean]",
     )
     p.add_argument("--seed", type=int, default=42, help="Random seed for --mode random [default: 42]")
@@ -60,14 +61,18 @@ def _add_sample_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--mode",
         default="random",
-        choices=("min", "max", "mean", "random"),
-        help="How to combine multiple templates [default: random]",
+        choices=DEPTH_MODES,
+        help="How to combine multiple template BEDs [default: random]",
     )
     p.add_argument(
         "--stat",
         default="mean",
-        choices=("mean", "min", "max", "median"),
-        help="Statistic for summarising ratio over read span [default: mean]",
+        choices=DEPTH_MODES,
+        help=(
+            "Statistic for summarising ratio over read span; "
+            "'random' picks one ratio from covered bases deterministically from span+seed "
+            "[default: mean]"
+        ),
     )
     p.add_argument("--seed", type=int, default=42, help="Random seed [default: 42]")
     # p.add_argument("--no-sort", action="store_true", help="Skip sorting/indexing output BAM")

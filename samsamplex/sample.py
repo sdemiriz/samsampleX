@@ -14,11 +14,13 @@ import xxhash
 from .bed import bed_combine_depths, bed_read_depths
 from .depth import DepthArray, depth_from_bam, region_parse, resolve_contig_name
 from .metrics import metrics_calculate, metrics_print
+from .modes import DEPTH_MODES
 
 UINT32_MAX = 0xFFFFFFFF
 
-VALID_STAT_MODES = ("mean", "min", "max", "median")
-VALID_COMBINE_MODES = ("min", "max", "mean", "random")
+# Backwards-compatible aliases (same canonical set as map/sample --mode and --stat).
+VALID_STAT_MODES = DEPTH_MODES
+VALID_COMBINE_MODES = DEPTH_MODES
 
 
 def _xxh32_fraction(qname: str, seed: int) -> float:
@@ -84,6 +86,27 @@ def _get_median_ratio(
     return float(np.median(ratios[cs - region_start : ce - region_start]))
 
 
+def _get_random_ratio(
+    ratios: np.ndarray,
+    region_start: int,
+    region_end: int,
+    read_start: int,
+    read_end: int,
+    seed: int,
+) -> float:
+    """Pick one ratio from the read's overlap slice; index is deterministic in (span, seed)."""
+    cs = max(read_start, region_start)
+    ce = min(read_end, region_end)
+    if cs >= ce:
+        return 0.0
+    sl = ratios[cs - region_start : ce - region_start]
+    if sl.size == 0:
+        return 0.0
+    h = xxhash.xxh32(f"{read_start}:{read_end}".encode(), seed=seed).intdigest()
+    idx = h % sl.size
+    return float(sl[idx])
+
+
 # ── Main sampling routine ───────────────────────────────────────────────────
 
 
@@ -134,6 +157,18 @@ def sample_run(
     log(f"[sample] Parsed region: {region.contig}:{region.start}-{region.end}")
 
     if uniform_fraction is None:
+        if mode not in DEPTH_MODES:
+            log(
+                f"Error: Unknown combine mode {mode!r} "
+                f"(expected one of: {', '.join(DEPTH_MODES)})"
+            )
+            return 1
+        if stat not in DEPTH_MODES:
+            log(
+                f"Error: Unknown stat mode {stat!r} "
+                f"(expected one of: {', '.join(DEPTH_MODES)})"
+            )
+            return 1
         if not template_beds:
             log("Error: Template BED(s) required when not using --uniform")
             return 1
@@ -171,6 +206,10 @@ def sample_run(
             get_ratio = lambda rs, re: _get_max_ratio(ratios, region.start, region.end, rs, re)
         elif stat == "median":
             get_ratio = lambda rs, re: _get_median_ratio(ratios, region.start, region.end, rs, re)
+        elif stat == "random":
+            get_ratio = lambda rs, re: _get_random_ratio(
+                ratios, region.start, region.end, rs, re, seed
+            )
         else:
             log(f"Error: Unknown stat mode '{stat}'")
             return 1

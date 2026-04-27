@@ -108,7 +108,7 @@ def bed_combine_depths(
 ) -> DepthArray:
     """Combine multiple DepthArrays position-by-position.
 
-    Supported *mode* values: ``"min"``, ``"max"``, ``"mean"``, ``"median"``, ``"random"``.
+    Supported *mode* values: ``"min"``, ``"mean"``, ``"median"``, ``"max"``, ``"random"``.
     """
     if len(arrays) == 1:
         return DepthArray(
