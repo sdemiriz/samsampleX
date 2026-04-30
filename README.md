@@ -6,8 +6,8 @@ A Python-based tool for dynamic BAM file downsampling, unlike existing tools tha
 - Uniform sampling mode: retain a fixed fraction of reads, feature parity with existing tools.
 - Map depth from multiple BAM files to a single BED template via common aggregation statistics (`min`, `mean`, `median`, `max`, `random`).
 - Calculation of quality metrics:
-    - First-order Wasserstein distance (W1): evaluate changes in distribution shape (per-base normalized).
-    - Total Variation (TV): difference between downsampling result and template (per-base normalized).
+    - Mean absolute error (MAE): mean per-base absolute difference in depth between two BAMs over the region.
+    - First-order Wasserstein distance (W1): L1 distance between empirical CDFs of per-base depths.
 - Plotting for visual sampling comparisons, with an option to emit a TSV file of the same data instead.
 
 ## Installation
@@ -17,6 +17,7 @@ A Python-based tool for dynamic BAM file downsampling, unlike existing tools tha
 - xxHash
 - numpy
 - matplotlib
+- scipy
 - Snakemake (benchmarking only)
 - pytest (testing only)
 
@@ -85,7 +86,6 @@ Retains approximately 50% of reads uniformly across the region.
 | `--mode MODE` | Combine mode for multiple templates: `min`, `mean`, `median`, `max`, `random` | `random` |
 | `--stat STAT` | Statistic for summarising ratio over read span: `min`, `mean`, `median`, `max`, `random` | `mean` |
 | `--seed INT` | Random seed for reproducibility | `42` |
-| `--no-metrics` | Skip metrics calculation after sampling | false |
 
 ### Plotting
 Compare depth of coverage between source, template, and output BAM files. Output either as PNG plot or TSV data.
@@ -145,7 +145,7 @@ samsampleX sample \
 | `--prg-seq FILE` | Path to HLA\*LA `sequences.txt` | `HLA-LA/graphs/PRG_MHC_GRCh38_withIMGT/sequences.txt` |
 
 ### Stats
-Compare depth distributions between two BAM files over a given region. Reports mean depth for each BAM, per-base normalized Total Variation distance, and per-base normalized Wasserstein-1 distance.
+Compare depth distributions between two BAM files over a given region. Reports mean depth for each BAM, mean absolute error (MAE), and Wasserstein-1 distance.
 ```bash
 samsampleX stats \
     --bam-a template.bam \
@@ -240,13 +240,12 @@ pytest -v
    - Hash read name with xxHash32 to produce a deterministic fraction $f_{read} \in [0, 1)$
    - Summarise the coefficient over the read's covered positions using `--stat` (min, mean, median, max, random; default mean via cumsum for mean). `random` picks one overlap ratio from a deterministic index (read span + seed).
    - Keep the read if $f_{read} < ratio_{read}$
-7. Report metrics (depth-based mode only): Total Variation and Wasserstein-1 distance (unless `--no-metrics`)
 
 ## Metrics
 | Metric | Significance |
 | ------ | ------------ |
-| Wasserstein-1 Distance | Difference between depth distribution shapes |
-| Total Variation | Depth difference at each position |
+| Mean Absolute Error | Average absolute per-base depth difference between the two BAMs |
+| Wasserstein-1 Distance | L1 distance between empirical CDFs of depth (scales with region length) |
 
 
 ## Benchmarking
