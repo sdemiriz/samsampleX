@@ -1,6 +1,7 @@
 configfile: "config.yaml"
 
 import os
+import re
 from textwrap import dedent
 
 BENCHMARKS = list(config["benchmarks"].keys())
@@ -124,6 +125,30 @@ def get_plot_tool_bams(wildcards):
 
 
 UNIFORM_BENCHMARKS = [b for b in BENCHMARKS if uses_uniform_samsample(b)]
+TEMPLATE_BENCHMARKS = [b for b in BENCHMARKS if not uses_uniform_samsample(b)]
+
+
+def _benchmark_regex(names):
+    """Regex matching exactly one of *names* (for disjoint wildcard_constraints)."""
+    if not names:
+        return "__no_matching_benchmark__"
+    return "(" + "|".join(re.escape(n) for n in names) + ")"
+
+
+TEMPLATE_BENCHMARK_REGEX = _benchmark_regex(TEMPLATE_BENCHMARKS)
+UNIFORM_BENCHMARK_REGEX = _benchmark_regex(UNIFORM_BENCHMARKS)
+
+
+def template_coefficient_input_paths(wildcards):
+    """Each template .bam and .bai, then config source .bam and .bai (for samtools -c on region)."""
+    b = wildcards.benchmark
+    paths = []
+    for t in get_templates(b):
+        paths.append(t)
+        paths.append(t + ".bai")
+    s = get_config(b, "source")
+    paths.extend([s, s + ".bai"])
+    return paths
 
 
 def get_uniform_pairwise_pairstat_paths(benchmark):
@@ -166,18 +191,78 @@ rule preprocess_source:
         samtools index {output.bam}
         """
 
+# Coefficient: template benchmarks = mean(samtools view -c per template) / samtools view -c source
+# (same region as get_region). Uniform benchmarks still set coefficient in config.yaml.
+rule coefficient_from_templates:
+    input:
+        lambda wildcards: template_coefficient_input_paths(wildcards),
+    output:
+        coefficient="{benchmark}/coefficient.txt",
+    params:
+        template_bams=lambda wc: " ".join(get_templates(wc.benchmark)),
+        source=lambda wc: get_config(wc.benchmark, "source"),
+        region=lambda wc: get_region(wc.benchmark),
+    wildcard_constraints:
+        benchmark=TEMPLATE_BENCHMARK_REGEX,
+    resources:
+        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
+        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
+        time=lambda wc: get_config(wc.benchmark, "time"),
+    container:
+        "bench.sif"
+    shell:
+        dedent(
+            """
+            set -euo pipefail
+            region='{params.region}'
+            sum=0
+            n=0
+            for b in {params.template_bams}; do
+                c=$(samtools view -c "$b" "$region")
+                sum=$((sum + c))
+                n=$((n + 1))
+            done
+            if [ "$n" -eq 0 ]; then
+                echo "coefficient_from_templates: no template BAMs" >&2
+                exit 1
+            fi
+            src=$(samtools view -c "{params.source}" "$region")
+            if [ "$src" -eq 0 ]; then
+                echo "coefficient_from_templates: source read count is 0" >&2
+                exit 1
+            fi
+            awk -v s="$sum" -v n="$n" -v src="$src" 'BEGIN {{ printf "%.17g\\n", (s / n) / src }}' > {output.coefficient}
+            """
+        ).strip()
+        + "\n"
+
+
+rule coefficient_from_config_uniform:
+    output:
+        coefficient="{benchmark}/coefficient.txt",
+    params:
+        coefficient=lambda wc: get_config(wc.benchmark, "coefficient"),
+    wildcard_constraints:
+        benchmark=UNIFORM_BENCHMARK_REGEX,
+    resources:
+        cpus=1,
+        mem_mb=256,
+        time="0:05:00",
+    shell:
+        """printf '%s' '{params.coefficient}' > {output.coefficient}"""
+
+
 rule GATK_HighAccuracy:
     input:
         bam="{benchmark}/source.bam",
         index="{benchmark}/source.bam.bai",
-    params:
-        coefficient=lambda wc: get_config(wc.benchmark, "coefficient"),
-    wildcard_constraints:
-        seed=r"\d+",
+        coefficient="{benchmark}/coefficient.txt",
     output:
         bam="{benchmark}/gatk-high-accuracy.seed{seed}.bam",
     benchmark:
         "{benchmark}/benchmarks/gatk-high-accuracy.seed{seed}.tsv"
+    wildcard_constraints:
+        seed=r"\d+",
     resources:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
@@ -188,7 +273,7 @@ rule GATK_HighAccuracy:
         """
         gatk --java-options "-Xmx{resources.mem_mb}m" DownsampleSam \
         -S HighAccuracy \
-        -P {params.coefficient} \
+        -P "$(cat {input.coefficient})" \
         -R {wildcards.seed} \
         -I {input.bam} \
         -O {output.bam}
@@ -198,14 +283,13 @@ rule GATK_ConstantMemory:
     input:
         bam="{benchmark}/source.bam",
         index="{benchmark}/source.bam.bai",
-    params:
-        coefficient=lambda wc: get_config(wc.benchmark, "coefficient"),
-    wildcard_constraints:
-        seed=r"\d+",
+        coefficient="{benchmark}/coefficient.txt",
     output:
         bam="{benchmark}/gatk-constant-memory.seed{seed}.bam",
     benchmark:
         "{benchmark}/benchmarks/gatk-constant-memory.seed{seed}.tsv"
+    wildcard_constraints:
+        seed=r"\d+",
     resources:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
@@ -216,7 +300,7 @@ rule GATK_ConstantMemory:
         """
         gatk --java-options "-Xmx{resources.mem_mb}m" DownsampleSam \
         -S ConstantMemory \
-        -P {params.coefficient} \
+        -P "$(cat {input.coefficient})" \
         -R {wildcards.seed} \
         -I {input.bam} \
         -O {output.bam}
@@ -226,14 +310,13 @@ rule GATK_Chained:
     input:
         bam="{benchmark}/source.bam",
         index="{benchmark}/source.bam.bai",
-    params:
-        coefficient=lambda wc: get_config(wc.benchmark, "coefficient"),
-    wildcard_constraints:
-        seed=r"\d+",
+        coefficient="{benchmark}/coefficient.txt",
     output:
         bam="{benchmark}/gatk-chained.seed{seed}.bam",
     benchmark:
         "{benchmark}/benchmarks/gatk-chained.seed{seed}.tsv"
+    wildcard_constraints:
+        seed=r"\d+",
     resources:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
@@ -244,7 +327,7 @@ rule GATK_Chained:
         """
         gatk --java-options "-Xmx{resources.mem_mb}m" DownsampleSam \
         -S Chained \
-        -P {params.coefficient} \
+        -P "$(cat {input.coefficient})" \
         -R {wildcards.seed} \
         -I {input.bam} \
         -O {output.bam}
@@ -254,14 +337,13 @@ rule samtools:
     input:
         bam="{benchmark}/source.bam",
         index="{benchmark}/source.bam.bai",
-    params:
-        coefficient=lambda wc: get_config(wc.benchmark, "coefficient"),
-    wildcard_constraints:
-        seed=r"\d+",
+        coefficient="{benchmark}/coefficient.txt",
     output:
         bam="{benchmark}/samtools.seed{seed}.bam",
     benchmark:
         "{benchmark}/benchmarks/samtools.seed{seed}.tsv"
+    wildcard_constraints:
+        seed=r"\d+",
     resources:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
@@ -271,7 +353,7 @@ rule samtools:
     shell:
         """
         samtools view {input.bam} \
-        --subsample {params.coefficient} \
+        --subsample "$(cat {input.coefficient})" \
         --subsample-seed {wildcards.seed} \
         -b -o {output.bam}
         """
@@ -280,14 +362,13 @@ rule sambamba:
     input:
         bam="{benchmark}/source.bam",
         index="{benchmark}/source.bam.bai",
-    params:
-        coefficient=lambda wc: get_config(wc.benchmark, "coefficient"),
-    wildcard_constraints:
-        seed=r"\d+",
+        coefficient="{benchmark}/coefficient.txt",
     output:
         bam="{benchmark}/sambamba.seed{seed}.bam",
     benchmark:
         "{benchmark}/benchmarks/sambamba.seed{seed}.tsv"
+    wildcard_constraints:
+        seed=r"\d+",
     resources:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
@@ -298,7 +379,7 @@ rule sambamba:
         """
         sambamba view {input.bam} \
         -f bam \
-        --subsample {params.coefficient} \
+        --subsample "$(cat {input.coefficient})" \
         --subsampling-seed {wildcards.seed} \
         -o {output.bam}
         """
@@ -336,7 +417,11 @@ rule samsampleX_map:
         """
 
 rule samsampleX_sampling:
-    """Downsample using samsampleX; template depth profile comes from combined map output."""
+    """Downsample using samsampleX; template depth profile comes from combined map output.
+
+    Config ``sample_mode`` is passed as ``--stat`` (how to summarize template/source ratio
+    along each read). ``--mode`` is only for combining multiple template BEDs (not used here).
+    """
     input:
         bam="{benchmark}/source.bam",
         index="{benchmark}/source.bam.bai",
@@ -362,10 +447,9 @@ rule samsampleX_sampling:
         --source-bam {input.bam} \
         --template-bed {input.template_bed} \
         --out-bam {output.bam} \
-        --no-metrics \
         --region {params.region} \
         --seed {wildcards.seed} \
-        --mode {params.sample_mode}
+        --stat {params.sample_mode}
         """
 
 rule uniform_plot_template_bed:
@@ -373,11 +457,11 @@ rule uniform_plot_template_bed:
     input:
         bam="{benchmark}/source.bam",
         index="{benchmark}/source.bam.bai",
+        coefficient="{benchmark}/coefficient.txt",
     output:
         bed="{benchmark}/uniform-plot-template.bed",
     params:
         region=lambda wc: get_region(wc.benchmark),
-        coefficient=lambda wc: get_config(wc.benchmark, "coefficient"),
     resources:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
@@ -395,7 +479,8 @@ rule uniform_plot_template_bed:
             bam = "{input.bam}"
             out_path = "{output.bed}"
             region = region_parse("{params.region}")
-            coef = float({params.coefficient})
+            with open("{input.coefficient}") as _cf:
+                coef = float(_cf.read().strip())
             arr = depth_from_bam(bam, region.contig, region.start, region.end)
             scaled = np.maximum(0, np.round(arr.depths.astype(float) * coef)).astype(np.int32)
             scaled_arr = DepthArray(arr.contig, arr.start, arr.end, scaled)
@@ -410,8 +495,8 @@ rule samsampleX_uniform:
     input:
         bam="{benchmark}/source.bam",
         index="{benchmark}/source.bam.bai",
+        coefficient="{benchmark}/coefficient.txt",
     params:
-        coefficient=lambda wc: get_config(wc.benchmark, "coefficient"),
         region=lambda wc: get_region(wc.benchmark),
     wildcard_constraints:
         seed=r"\d+",
@@ -429,9 +514,8 @@ rule samsampleX_uniform:
         """
         samsampleX sample \
         --source-bam {input.bam} \
-        --uniform {params.coefficient} \
+        --uniform "$(cat {input.coefficient})" \
         --out-bam {output.bam} \
-        --no-metrics \
         --region {params.region} \
         --seed {wildcards.seed}
         """
@@ -564,10 +648,10 @@ rule uniform_pairwise_metrics_matrix:
             with open(filepath) as f:
                 for line in f:
                     line = line.strip()
-                    if "Total Variation:" in line:
+                    if "Mean Absolute Error:" in line:
                         match = re.search(r"([\d.]+)\s*$", line)
                         if match:
-                            data["tv"] = float(match.group(1))
+                            data["mae"] = float(match.group(1))
                     elif "Wasserstein" in line:
                         match = re.search(r"([\d.]+)\s*$", line)
                         if match:
@@ -576,7 +660,7 @@ rule uniform_pairwise_metrics_matrix:
 
         tools = get_comparison_tools(wildcards.benchmark)
         seeds = get_seeds(wildcards.benchmark)
-        # (tool_a, tool_b) -> list of {tv, wasserstein}
+        # (tool_a, tool_b) -> list of {mae, wasserstein}
         by_pair = {(ta, tb): [] for ta in tools for tb in tools}
         for ta in tools:
             for tb in tools:
@@ -594,13 +678,13 @@ rule uniform_pairwise_metrics_matrix:
             s = statistics.stdev(values) if len(values) > 1 else 0.0
             return m, s
 
-        def format_cell(tv_list, w_list):
-            tvm, tvs = mean_std(tv_list)
+        def format_cell(mae_list, w_list):
+            maem, maes = mean_std(mae_list)
             w1m, w1s = mean_std(w_list)
-            if tvm is None or w1m is None:
+            if maem is None or w1m is None:
                 return "NA"
             return (
-                f"{format_float_sigfigs(tvm, sf)} ({format_float_sigfigs(tvs, sf)}) | "
+                f"{format_float_sigfigs(maem, sf)} ({format_float_sigfigs(maes, sf)}) | "
                 f"{format_float_sigfigs(w1m, sf)} ({format_float_sigfigs(w1s, sf)})"
             )
 
@@ -611,9 +695,9 @@ rule uniform_pairwise_metrics_matrix:
                 row_cells = [ta]
                 for tb in tools:
                     rows = by_pair.get((ta, tb), [])
-                    tv_vals = [r.get("tv") for r in rows]
+                    mae_vals = [r.get("mae") for r in rows]
                     w_vals = [r.get("wasserstein") for r in rows]
-                    row_cells.append(format_cell(tv_vals, w_vals))
+                    row_cells.append(format_cell(mae_vals, w_vals))
                 out.write("\t".join(row_cells) + "\n")
 
 
@@ -773,10 +857,10 @@ rule stats_summary:
                         match = re.search(r'([\d.]+)\s*$', line)
                         if match:
                             data['mean_depth_tool'] = float(match.group(1))
-                    elif "Total Variation:" in line:
+                    elif "Mean Absolute Error:" in line:
                         match = re.search(r'([\d.]+)\s*$', line)
                         if match:
-                            data['tv'] = float(match.group(1))
+                            data['mae'] = float(match.group(1))
                     elif "Wasserstein" in line:
                         match = re.search(r'([\d.]+)\s*$', line)
                         if match:
@@ -808,7 +892,7 @@ rule stats_summary:
             row_order = cmp_tools
         
         summary_rows = []
-        metrics = ['tv', 'wasserstein', 'mean_depth_tool']
+        metrics = ['mae', 'wasserstein', 'mean_depth_tool']
         
         for tool in row_order:
             results = tool_results[tool]
@@ -828,7 +912,7 @@ rule stats_summary:
             
             summary_rows.append(row)
         
-        headers = ['tool', 'tv_mean', 'tv_std', 'wasserstein_mean', 'wasserstein_std', 
+        headers = ['tool', 'mae_mean', 'mae_std', 'wasserstein_mean', 'wasserstein_std',
                    'mean_depth_tool_mean', 'mean_depth_tool_std']
         
         with open(output.summary, 'w') as out:
@@ -933,6 +1017,7 @@ rule consolidated_summary:
         runtime="{benchmark}/results_summary.tsv",
         accuracy="{benchmark}/stats_summary.tsv",
         depth="{benchmark}/samtools_depth_summary.tsv",
+        coefficient="{benchmark}/coefficient.txt",
     output:
         consolidated="benchmark-{benchmark}.tsv"
     params:
@@ -981,8 +1066,8 @@ rule consolidated_summary:
                 tool = fields[0]
                 
                 accuracy_data[tool] = {
-                    'tv_mean': fields[col_idx.get('tv_mean', -1)],
-                    'tv_std': fields[col_idx.get('tv_std', -1)],
+                    'mae_mean': fields[col_idx.get('mae_mean', -1)],
+                    'mae_std': fields[col_idx.get('mae_std', -1)],
                     'w1_mean': fields[col_idx.get('wasserstein_mean', -1)],
                     'w1_std': fields[col_idx.get('wasserstein_std', -1)],
                 }
@@ -997,7 +1082,8 @@ rule consolidated_summary:
                 if len(fields) >= 3:
                     depth_data[fields[0]] = {'mean': fields[1], 'std': fields[2]}
 
-        coeff_val = float(get_config(wildcards.benchmark, "coefficient"))
+        with open(input.coefficient) as _cf:
+            coeff_val = float(_cf.read().strip())
         coeff_str = format_float_sigfigs(coeff_val, sf)
 
         def depth_cell(label):
@@ -1025,16 +1111,16 @@ rule consolidated_summary:
             )
             d_str = depth_cell(tool)
             try:
-                tm, ts = acc.get("tv_mean"), acc.get("tv_std")
-                if tm in (None, "", "NA") or ts in (None, "", "NA"):
-                    tv_str = "NA"
+                mm, ms = acc.get("mae_mean"), acc.get("mae_std")
+                if mm in (None, "", "NA") or ms in (None, "", "NA"):
+                    mae_str = "NA"
                 else:
-                    tv_str = (
-                        f"{format_float_sigfigs(float(tm), sf)} "
-                        f"({format_float_sigfigs(float(ts), sf)})"
+                    mae_str = (
+                        f"{format_float_sigfigs(float(mm), sf)} "
+                        f"({format_float_sigfigs(float(ms), sf)})"
                     )
             except (ValueError, TypeError):
-                tv_str = "NA"
+                mae_str = "NA"
             try:
                 wm1, ws1 = acc.get("w1_mean"), acc.get("w1_std")
                 if wm1 in (None, "", "NA") or ws1 in (None, "", "NA"):
@@ -1046,11 +1132,11 @@ rule consolidated_summary:
                     )
             except (ValueError, TypeError):
                 w1_str = "NA"
-            return f"{tool}\t{wall_str}\t{mem_str}\t{coeff_str}\t{d_str}\t{tv_str}\t{w1_str}\n"
+            return f"{tool}\t{wall_str}\t{mem_str}\t{coeff_str}\t{d_str}\t{mae_str}\t{w1_str}\n"
 
         with open(output.consolidated, 'w') as out:
             out.write(
-                "Tool\tWall Clock (s)\tMemory (GB)\tCoefficient\tDepth (samtools)\tTV\tNorm. W1\n"
+                "Tool\tWall Clock (s)\tMemory (GB)\tCoefficient\tDepth (samtools)\tMAE\tW1\n"
             )
             if uses_uniform_samsample(wildcards.benchmark):
                 competitors = get_non_samsamplex_comparison_tools(wildcards.benchmark)

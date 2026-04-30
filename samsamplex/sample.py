@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import sys
-import tempfile
 from typing import Sequence
 
 import numpy as np
@@ -13,7 +12,6 @@ import xxhash
 
 from .bed import bed_combine_depths, bed_read_depths
 from .depth import DepthArray, depth_from_bam, region_parse, resolve_contig_name
-from .metrics import metrics_calculate, metrics_print
 from .modes import DEPTH_MODES
 
 UINT32_MAX = 0xFFFFFFFF
@@ -119,7 +117,6 @@ def sample_run(
     stat: str = "mean",
     seed: int = 42,
     # no_sort: bool = False,
-    no_metrics: bool = False,
     uniform_fraction: float | None = None,
     threads: int = 2,
 ) -> int:
@@ -255,16 +252,6 @@ def sample_run(
     #         log("[sample] Sorting and indexing complete.")
     #     except Exception as exc:
     #         log(f"Warning: Failed to sort/index output BAM: {exc}")
-
-    # Metrics (skip in uniform mode; no template to compare)
-    if not no_metrics and uniform_fraction is None:
-        log("[sample] Computing metrics...")
-        try:
-            output_depth = depth_from_bam(out_bam, region.contig, region.start, region.end)
-            result = metrics_calculate(template_depth, output_depth)
-            metrics_print(result, label_a="Template", label_b="Output")
-        except Exception as exc:
-            log(f"Warning: Could not compute metrics: {exc}")
 
     log(f"[sample] Done. Output written to: {out_bam}")
     return 0

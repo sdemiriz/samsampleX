@@ -1,10 +1,10 @@
-"""Tests for metrics.py: Wasserstein-1, Total Variation, metrics_calculate."""
+"""Tests for metrics.py: Wasserstein-1, mean absolute error, metrics_calculate."""
 
 import numpy as np
 import pytest
 
 from samsamplex.depth import DepthArray
-from samsamplex.metrics import MetricsResult, _total_variation, _wasserstein, metrics_calculate
+from samsamplex.metrics import _mean_absolute_error, _wasserstein, metrics_calculate
 
 
 def _make(depths):
@@ -39,34 +39,32 @@ class TestWasserstein:
         assert _wasserstein(a, a) == pytest.approx(0.0)
 
 
-# ── _total_variation ─────────────────────────────────────────────────────────
+# ── _mean_absolute_error ─────────────────────────────────────────────────────
 
 
-class TestTotalVariation:
+class TestMeanAbsoluteError:
     def test_identical_is_zero(self):
         a = np.array([10, 20, 30], dtype=np.int32)
-        assert _total_variation(a, a) == pytest.approx(0.0)
+        assert _mean_absolute_error(a, a) == pytest.approx(0.0)
 
     def test_empty_is_zero(self):
         a = np.array([], dtype=np.int32)
-        assert _total_variation(a, a) == 0.0
+        assert _mean_absolute_error(a, a) == 0.0
 
-    def test_known_value(self):
+    def test_constant_shift(self):
         a = np.array([10, 10, 10], dtype=np.int32)
         b = np.array([20, 20, 20], dtype=np.int32)
-        # Disjoint supports: |1-0| + |0-1| = 2 → TV = 1.0
-        assert _total_variation(a, b) == pytest.approx(1.0)
+        assert _mean_absolute_error(a, b) == pytest.approx(10.0)
 
     def test_symmetric(self):
         a = np.array([5, 15, 25], dtype=np.int32)
         b = np.array([25, 15, 5], dtype=np.int32)
-        assert _total_variation(a, b) == pytest.approx(_total_variation(b, a))
+        assert _mean_absolute_error(a, b) == pytest.approx(_mean_absolute_error(b, a))
 
-    def test_one_diff(self):
+    def test_mixed_positions(self):
         a = np.array([10, 10, 10, 10], dtype=np.int32)
         b = np.array([10, 10, 10, 20], dtype=np.int32)
-        # p_a(10)=1, p_b(10)=3/4; p_a(20)=0, p_b(20)=1/4 → (1/2)(1/4+1/4)=0.25
-        assert _total_variation(a, b) == pytest.approx(0.25)
+        assert _mean_absolute_error(a, b) == pytest.approx(2.5)
 
 
 # ── metrics_calculate ────────────────────────────────────────────────────────
@@ -77,13 +75,13 @@ class TestMetricsCalculate:
         a = _make([10, 20, 30])
         result = metrics_calculate(a, a)
         assert result.wasserstein == pytest.approx(0.0)
-        assert result.tv == pytest.approx(0.0)
+        assert result.mae == pytest.approx(0.0)
 
     def test_different_arrays(self):
         a = _make([10, 10, 10])
         b = _make([20, 20, 20])
         result = metrics_calculate(a, b)
-        assert result.tv > 0.0
+        assert result.mae == pytest.approx(10.0)
         assert result.wasserstein >= 0.0
 
     def test_length_mismatch_raises(self):
