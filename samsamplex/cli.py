@@ -21,7 +21,7 @@ def _add_map_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Input BAM file(s)",
     )
     p.add_argument("--region", required=True, help="Target region (samtools-style)")
-    p.add_argument("--out-bed", default="out.bed", help="Output BED file [default: out.bed]")
+    p.add_argument("--out-bed", required=True, help="Output BED file")
     p.add_argument(
         "--collapse",
         type=int,
@@ -57,7 +57,7 @@ def _add_sample_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Uniform sampling: retain fraction of reads by hash (0-1). Bypasses template/depth logic.",
     )
     p.add_argument("--region", required=True, help="Target region (samtools-style)")
-    p.add_argument("--out-bam", default="out.bam", help="Output BAM file [default: out.bam]")
+    p.add_argument("--out-bam", required=True, help="Output BAM file")
     p.add_argument(
         "--mode",
         default="random",
@@ -104,10 +104,7 @@ def _add_mapback_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     p.add_argument("--source-bam", required=True, help="HLA*LA-remapped BAM file")
     p.add_argument("--region", required=True, help="Target region on chr6 (samtools-style)")
-    p.add_argument(
-        "--out-bam", default="out.mapback.bam",
-        help="Output BAM file [default: out.mapback.bam]",
-    )
+    p.add_argument("--out-bam", required=True, help="Output BAM file")
     p.add_argument(
         "--genome-build", required=True, choices=("GRCh38", "GRCh37"),
         help="Reference genome build",
