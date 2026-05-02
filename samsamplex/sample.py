@@ -29,6 +29,13 @@ def _xxh32_fraction(qname: str, seed: int) -> float:
 
 # ── Ratio helpers ────────────────────────────────────────────────────────────
 
+# CIGAR op codes (BAM spec): only M(0), =(7), X(8) are "aligned" positions where the
+# read actually has a base aligned to the reference. D(2), N(3) consume reference
+# positions but the read has no base there, so we skip them when aggregating ratios.
+# I(1), S(4), H(5), P(6) don't consume reference at all.
+_ALIGNED_OPS = {0, 7, 8}        # M, =, X (count toward the stat)
+_REF_OPS = {0, 2, 3, 7, 8}      # M, D, N, =, X (consume reference; advance ref_pos)
+
 
 def _compute_ratios(template: DepthArray, source: DepthArray) -> np.ndarray:
     """ratio[i] = min(1.0, template[i] / source[i]), 0 where source is 0."""
@@ -41,68 +48,125 @@ def _compute_ratios(template: DepthArray, source: DepthArray) -> np.ndarray:
     return ratios
 
 
+def _aligned_ref_runs(read) -> list[tuple[int, int]]:
+    """Walk a read's CIGAR and return [(ref_start, ref_end), ...] for M/=/X spans.
+
+    D and N ops still advance the reference position (so subsequent aligned ops
+    map to the right place) but they themselves are not emitted. I/S/H/P ops
+    don't consume reference and are silently skipped.
+    """
+    runs: list[tuple[int, int]] = []
+    cigar = read.cigartuples
+    if not cigar:
+        return runs
+    pos = read.reference_start
+    for op, length in cigar:
+        if op in _ALIGNED_OPS:
+            runs.append((pos, pos + length))
+            pos += length
+        elif op in _REF_OPS:
+            pos += length
+    return runs
+
+
+def _collect_aligned_ratios(
+    ratios: np.ndarray,
+    region_start: int,
+    region_end: int,
+    runs: list[tuple[int, int]],
+) -> np.ndarray | None:
+    """Concatenate the slices of *ratios* corresponding to the clipped aligned runs.
+
+    Returns None if no run overlaps the region (so callers can short-circuit to 0.0).
+    """
+    parts: list[np.ndarray] = []
+    for rs, re in runs:
+        cs = max(rs, region_start)
+        ce = min(re, region_end)
+        if cs < ce:
+            parts.append(ratios[cs - region_start : ce - region_start])
+    if not parts:
+        return None
+    return parts[0] if len(parts) == 1 else np.concatenate(parts)
+
+
 def _get_mean_ratio(
-    cumsum: np.ndarray, region_start: int, region_end: int, read_start: int, read_end: int,
+    cumsum: np.ndarray,
+    region_start: int,
+    region_end: int,
+    runs: list[tuple[int, int]],
 ) -> float:
-    """O(1) mean ratio over a read span using the precomputed cumulative sum."""
-    cs = max(read_start, region_start)
-    ce = min(read_end, region_end)
-    if cs >= ce:
+    """Mean ratio over aligned reference positions, using cumsum per run for speed."""
+    total = 0.0
+    count = 0
+    for rs, re in runs:
+        cs = max(rs, region_start)
+        ce = min(re, region_end)
+        if cs >= ce:
+            continue
+        total += float(cumsum[ce - region_start] - cumsum[cs - region_start])
+        count += ce - cs
+    if count == 0:
         return 0.0
-    i1 = cs - region_start
-    i2 = ce - region_start
-    return float(cumsum[i2] - cumsum[i1]) / (ce - cs)
+    return total / count
 
 
 def _get_min_ratio(
-    ratios: np.ndarray, region_start: int, region_end: int, read_start: int, read_end: int,
+    ratios: np.ndarray,
+    region_start: int,
+    region_end: int,
+    runs: list[tuple[int, int]],
 ) -> float:
-    cs = max(read_start, region_start)
-    ce = min(read_end, region_end)
-    if cs >= ce:
+    arr = _collect_aligned_ratios(ratios, region_start, region_end, runs)
+    if arr is None or arr.size == 0:
         return 0.0
-    return float(ratios[cs - region_start : ce - region_start].min())
+    return float(arr.min())
 
 
 def _get_max_ratio(
-    ratios: np.ndarray, region_start: int, region_end: int, read_start: int, read_end: int,
+    ratios: np.ndarray,
+    region_start: int,
+    region_end: int,
+    runs: list[tuple[int, int]],
 ) -> float:
-    cs = max(read_start, region_start)
-    ce = min(read_end, region_end)
-    if cs >= ce:
+    arr = _collect_aligned_ratios(ratios, region_start, region_end, runs)
+    if arr is None or arr.size == 0:
         return 0.0
-    return float(ratios[cs - region_start : ce - region_start].max())
+    return float(arr.max())
 
 
 def _get_median_ratio(
-    ratios: np.ndarray, region_start: int, region_end: int, read_start: int, read_end: int,
+    ratios: np.ndarray,
+    region_start: int,
+    region_end: int,
+    runs: list[tuple[int, int]],
 ) -> float:
-    cs = max(read_start, region_start)
-    ce = min(read_end, region_end)
-    if cs >= ce:
+    arr = _collect_aligned_ratios(ratios, region_start, region_end, runs)
+    if arr is None or arr.size == 0:
         return 0.0
-    return float(np.median(ratios[cs - region_start : ce - region_start]))
+    return float(np.median(arr))
 
 
 def _get_random_ratio(
     ratios: np.ndarray,
     region_start: int,
     region_end: int,
+    runs: list[tuple[int, int]],
+    seed: int,
     read_start: int,
     read_end: int,
-    seed: int,
 ) -> float:
-    """Pick one ratio from the read's overlap slice; index is deterministic in (span, seed)."""
-    cs = max(read_start, region_start)
-    ce = min(read_end, region_end)
-    if cs >= ce:
-        return 0.0
-    sl = ratios[cs - region_start : ce - region_start]
-    if sl.size == 0:
+    """Pick one ratio from the read's aligned positions; index is deterministic in (span, seed).
+
+    The hash key is the original (read_start, read_end) span so determinism per
+    (span, seed) is preserved across the CIGAR-aware change; only the array
+    being indexed differs.
+    """
+    arr = _collect_aligned_ratios(ratios, region_start, region_end, runs)
+    if arr is None or arr.size == 0:
         return 0.0
     h = xxhash.xxh32(f"{read_start}:{read_end}".encode(), seed=seed).intdigest()
-    idx = h % sl.size
-    return float(sl[idx])
+    return float(arr[h % arr.size])
 
 
 # ── Main sampling routine ───────────────────────────────────────────────────
@@ -194,18 +258,29 @@ def sample_run(
         # Precompute cumulative sum (used by mean stat mode, always needed for default)
         cumsum = np.concatenate(([0.0], np.cumsum(ratios)))
 
-        # Choose ratio-lookup function based on stat mode
+        # Choose ratio-lookup function based on stat mode. Each lambda walks the
+        # read's CIGAR (via _aligned_ref_runs) so only M/=/X reference positions
+        # contribute; D/N/I/S/H/P are excluded.
         if stat == "mean":
-            get_ratio = lambda rs, re: _get_mean_ratio(cumsum, region.start, region.end, rs, re)
+            get_ratio = lambda r: _get_mean_ratio(
+                cumsum, region.start, region.end, _aligned_ref_runs(r)
+            )
         elif stat == "min":
-            get_ratio = lambda rs, re: _get_min_ratio(ratios, region.start, region.end, rs, re)
+            get_ratio = lambda r: _get_min_ratio(
+                ratios, region.start, region.end, _aligned_ref_runs(r)
+            )
         elif stat == "max":
-            get_ratio = lambda rs, re: _get_max_ratio(ratios, region.start, region.end, rs, re)
+            get_ratio = lambda r: _get_max_ratio(
+                ratios, region.start, region.end, _aligned_ref_runs(r)
+            )
         elif stat == "median":
-            get_ratio = lambda rs, re: _get_median_ratio(ratios, region.start, region.end, rs, re)
+            get_ratio = lambda r: _get_median_ratio(
+                ratios, region.start, region.end, _aligned_ref_runs(r)
+            )
         elif stat == "random":
-            get_ratio = lambda rs, re: _get_random_ratio(
-                ratios, region.start, region.end, rs, re, seed
+            get_ratio = lambda r: _get_random_ratio(
+                ratios, region.start, region.end, _aligned_ref_runs(r),
+                seed, r.reference_start, r.reference_end,
             )
         else:
             log(f"Error: Unknown stat mode '{stat}'")
@@ -228,7 +303,7 @@ def sample_run(
                 if uniform_fraction is not None:
                     read_ratio = uniform_fraction
                 else:
-                    read_ratio = get_ratio(read.reference_start, read.reference_end)
+                    read_ratio = get_ratio(read)
 
                 if hash_frac < read_ratio:
                     out.write(read)
