@@ -11,6 +11,18 @@ from scipy.stats import wasserstein_distance
 from .depth import DepthArray
 
 
+def depth_from_path(path: str, contig: str, start: int, end: int) -> DepthArray:
+    """Load a DepthArray from *path*, auto-detecting format by extension.
+
+    .bed files are read via bed_read_depths; everything else is treated as BAM.
+    """
+    if path.endswith(".bed"):
+        from .bed import bed_read_depths
+        return bed_read_depths(path, contig, start, end)
+    from .depth import depth_from_bam
+    return depth_from_bam(path, contig, start, end)
+
+
 @dataclass
 class MetricsResult:
     mae: float
@@ -29,9 +41,7 @@ def _wasserstein(a: np.ndarray, b: np.ndarray) -> float:
 
 def _mean_absolute_error(a: np.ndarray, b: np.ndarray) -> float:
     """Mean absolute per-base depth difference between aligned arrays *a* and *b*."""
-    n = min(len(a), len(b))
-    assert n > 0, "Wasserstein distance requires non-empty arrays"
-
+    assert len(a) > 0 and len(b) > 0, "MAE requires non-empty arrays"
     return float(np.mean(np.abs(a.astype(np.float64) - b.astype(np.float64))))
 
 

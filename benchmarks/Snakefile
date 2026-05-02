@@ -61,11 +61,11 @@ def get_plot_tools(benchmark):
     return tools
 
 
-def get_stats_reference_bam(benchmark):
-    """BAM A for samsampleX stats: source slice for uniform; first template otherwise."""
+def get_stats_reference(benchmark):
+    """Reference input for samsampleX stats: source BAM for uniform; combined template BED otherwise."""
     if uses_uniform_samsample(benchmark):
         return f"{benchmark}/source.bam"
-    return get_templates(benchmark)[0]
+    return f"{benchmark}/samsampleX-template.bed"
 
 
 def get_config(benchmark, key):
@@ -537,11 +537,11 @@ rule index_output_bam:
         """
 
 rule compare_stats:
-    """samsampleX stats: reference BAM vs each tool output. Used for template benchmarks only; uniform uses compare_stats_uniform_pairwise."""
+    """samsampleX stats: reference (BED or BAM) vs each tool output."""
     input:
         tool_bam="{benchmark}/{tool}.seed{seed}.bam",
         tool_index="{benchmark}/{tool}.seed{seed}.bam.bai",
-        template_bam=lambda wc: get_stats_reference_bam(wc.benchmark),
+        reference=lambda wc: get_stats_reference(wc.benchmark),
     params:
         region=lambda wc: get_region(wc.benchmark),
     wildcard_constraints:
@@ -558,8 +558,8 @@ rule compare_stats:
     shell:
         """
         samsampleX stats \
-            --bam-a {input.template_bam} \
-            --bam-b {input.tool_bam} \
+            --a {input.reference} \
+            --b {input.tool_bam} \
             --region {params.region} \
             2> {output.stats}
         """
@@ -587,8 +587,8 @@ rule compare_stats_uniform_pairwise:
     shell:
         """
         samsampleX stats \
-            --bam-a {input.ref_bam} \
-            --bam-b {input.samsamplex_bam} \
+            --a {input.ref_bam} \
+            --b {input.samsamplex_bam} \
             --region {params.region} \
             2> {output.stats}
         """
@@ -619,8 +619,8 @@ rule compare_stats_uniform_ordered_pair:
         """
         mkdir -p $(dirname {output.stats})
         samsampleX stats \
-            --bam-a {input.bam_a} \
-            --bam-b {input.bam_b} \
+            --a {input.bam_a} \
+            --b {input.bam_b} \
             --region {params.region} \
             2> {output.stats}
         """

@@ -120,10 +120,10 @@ def _add_mapback_parser(subparsers: argparse._SubParsersAction) -> None:
 def _add_stats_parser(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser(
         "stats",
-        help="Compare depth distributions between two BAM files",
+        help="Compare depth distributions between two BAM or BED files",
     )
-    p.add_argument("--bam-a", required=True, help="First BAM file (reference)")
-    p.add_argument("--bam-b", required=True, help="Second BAM file (comparison)")
+    p.add_argument("--a", required=True, help="First input file — BAM or BED (reference)")
+    p.add_argument("--b", required=True, help="Second input file — BAM or BED (comparison)")
     p.add_argument("--region", required=True, help="Region to compare (samtools-style)")
 
 
@@ -245,45 +245,59 @@ def _run_mapback(args: argparse.Namespace) -> int:
 
 
 def _run_stats(args: argparse.Namespace) -> int:
-    from .depth import depth_from_bam, region_parse
-    from .metrics import metrics_calculate, metrics_print
+    from .depth import region_parse
+    from .metrics import depth_from_path, metrics_calculate, metrics_print
 
     log = lambda msg: print(msg, file=sys.stderr)
 
     region = region_parse(args.region)
 
-    import pysam
+    # Resolve region bounds from a BAM input (BED files don't carry contig lengths).
+    bam_input = None
+    for path in (args.a, args.b):
+        if not path.endswith(".bed"):
+            bam_input = path
+            break
 
-    with pysam.AlignmentFile(args.bam_a, "rb") as bam:
+    if bam_input is not None:
+        import pysam
         from .depth import resolve_contig_name
 
-        resolved = resolve_contig_name(bam.header, region.contig)
-        if resolved is None:
-            log(f"Error: Contig '{region.contig}' not found in BAM A")
+        with pysam.AlignmentFile(bam_input, "rb") as bam:
+            resolved = resolve_contig_name(bam.header, region.contig)
+            if resolved is None:
+                log(f"Error: Contig '{region.contig}' not found in {bam_input}")
+                return 1
+            region.contig = resolved
+            if region.start < 0:
+                region.start = 0
+            if region.end < 0:
+                region.end = bam.get_reference_length(resolved)
+    else:
+        if region.start < 0 or region.end < 0:
+            log("Error: --region must specify explicit start and end when both inputs are BED files")
             return 1
-        region.contig = resolved
-        if region.start < 0:
-            region.start = 0
-        if region.end < 0:
-            region.end = bam.get_reference_length(resolved)
 
-    log(f"Computing depth for BAM A: {args.bam_a}")
-    log(f"Computing depth for BAM B: {args.bam_b}")
+    def _fmt_type(path: str) -> str:
+        return "BED" if path.endswith(".bed") else "BAM"
+
+    log(f"Input A ({_fmt_type(args.a)}): {args.a}")
+    log(f"Input B ({_fmt_type(args.b)}): {args.b}")
     log(f"Region: {region.contig}:{region.start + 1}-{region.end}")
 
-    depth_a = depth_from_bam(args.bam_a, region.contig, region.start, region.end)
-    depth_b = depth_from_bam(args.bam_b, region.contig, region.start, region.end)
+    depth_a = depth_from_path(args.a, region.contig, region.start, region.end)
+    depth_b = depth_from_path(args.b, region.contig, region.start, region.end)
 
     result = metrics_calculate(depth_a, depth_b)
 
     log("")
     log("========== Comparison Metrics ==========")
-    log(f"BAM A (reference):       {args.bam_a}")
-    log(f"BAM B (comparison):      {args.bam_b}")
+    log(f"A (reference):           {args.a}")
+    log(f"B (comparison):          {args.b}")
     log(f"Region:                  {region.contig}:{region.start + 1}-{region.end}")
     log(f"Positions compared:      {depth_a.length}")
     log("-" * 41)
-    metrics_print(result, label_a="BAM A", label_b="BAM B")
+    metrics_print(result, label_a="A", label_b="B")
 
     return 0
 

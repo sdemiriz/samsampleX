@@ -49,7 +49,7 @@ samsampleX map \
 |--------|-------------|---------|
 | `--template-bam FILE [FILE ...]` | Input BAM file(s) (required) | - |
 | `--region REGION` | Target region, samtools-style (required) | - |
-| `--out-bed FILE` | Output BED file | `out.bed` |
+| `--out-bed FILE` | Output BED file (required) | - |
 | `--collapse INT` | Merge consecutive positions with depth diff <= INT | `0` |
 | `--mode MODE` | Combine mode when multiple BAMs: `min`, `mean`, `median`, `max`, `random` | `mean` |
 | `--seed INT` | Random seed for `--mode random` | `42` |
@@ -82,7 +82,7 @@ Retains approximately 50% of reads uniformly across the region.
 | `--template-bed FILE` | Template BED file; required unless `--uniform` is used | - |
 | `--uniform FRACTION` | Uniform sampling: retain fraction of reads. Bypasses template-based downsampling. | - |
 | `--region REGION` | Target region, samtools-style (required) | - |
-| `--out-bam FILE` | Output BAM file to write reads to | `out.bam` |
+| `--out-bam FILE` | Output BAM file to write reads to (required) | - |
 | `--mode MODE` | Combine mode for multiple templates: `min`, `mean`, `median`, `max`, `random` | `random` |
 | `--stat STAT` | Statistic for summarising ratio over read span: `min`, `mean`, `median`, `max`, `random` | `mean` |
 | `--seed INT` | Random seed for reproducibility | `42` |
@@ -140,23 +140,30 @@ samsampleX sample \
 |--------|-------------|---------|
 | `--source-bam FILE` | HLA\*LA-remapped BAM file (required) | - |
 | `--region REGION` | Target region on chr6, samtools-style (required) | - |
-| `--out-bam FILE` | Output BAM file | `out.bam` |
+| `--out-bam FILE` | Output BAM file (required) | - |
 | `--genome-build BUILD` | Reference genome build: `GRCh38` or `GRCh37` (required) | - |
 | `--prg-seq FILE` | Path to HLA\*LA `sequences.txt` | `HLA-LA/graphs/PRG_MHC_GRCh38_withIMGT/sequences.txt` |
 
 ### Stats
-Compare depth distributions between two BAM files over a given region. Reports mean depth for each BAM, mean absolute error (MAE), and Wasserstein-1 distance.
+Compare depth distributions between two inputs over a given region. Each input can be a BAM file or a BED file (auto-detected by extension). Reports mean absolute error (MAE) and Wasserstein-1 distance.
 ```bash
+# BAM vs BAM
 samsampleX stats \
-    --bam-a template.bam \
-    --bam-b sampled.bam \
+    --a template.bam \
+    --b sampled.bam \
+    --region chr1:1000-2000
+
+# BED vs BAM (e.g. combined cohort template against sampled output)
+samsampleX stats \
+    --a template.bed \
+    --b sampled.bam \
     --region chr1:1000-2000
 ```
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--bam-a FILE` | First BAM file, e.g. reference/template (required) | - |
-| `--bam-b FILE` | Second BAM file, e.g. sampled output (required) | - |
+| `--a FILE` | First input — BAM or BED file (reference) (required) | - |
+| `--b FILE` | Second input — BAM or BED file (comparison) (required) | - |
 | `--region REGION` | Target region, samtools-style (required) | - |
 
 ## Example
