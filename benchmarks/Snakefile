@@ -1,5 +1,6 @@
 configfile: "config.yaml"
 
+import json
 import os
 import re
 from textwrap import dedent
@@ -80,10 +81,6 @@ def get_sample_mode(benchmark):
     return get_config(benchmark, "sample_mode")
 
 
-def get_seeds(benchmark):
-    cfg = config["benchmarks"][benchmark]
-    return [cfg["seed"] + i for i in range(1, cfg["n_replicates"] + 1)]
-
 def get_region(benchmark):
     cfg = config["benchmarks"][benchmark]
     return f"{cfg['chr']}:{cfg['start']}-{cfg['end']}"
@@ -109,15 +106,65 @@ def format_float_sigfigs(x, sigfigs: int) -> str:
 
 SNAKE_DIR = os.path.dirname(workflow.snakefile)
 SAMSAMPLEX_ROOT = os.path.normpath(os.path.join(SNAKE_DIR, ".."))
+# Relative to Snakemake invocation cwd; use `cd benchmarks` or `--directory benchmarks`.
+MASTER_SEEDS_JSON = "master_seeds.json"
 
 
-def get_plot_seed(benchmark):
-    """First replicate seed; matches plot.py default when config seed is one less."""
-    return get_config(benchmark, "seed") + 1
+checkpoint master_seed_manifest:
+    """Shared seeds for all benchmarks (see master_seeds.json). Invalidates when config.yaml changes."""
+    input:
+        cfg="config.yaml",
+    output:
+        json=MASTER_SEEDS_JSON,
+    run:
+        import secrets
+
+        upper = 2**31 - 1
+
+        def draw_seed():
+            return secrets.randbelow(upper) + 1
+
+        R = max(get_config(b, "n_replicates") for b in BENCHMARKS)
+        payload = {
+            "map_seed": draw_seed(),
+            "replicate_seeds": [draw_seed() for _ in range(R)],
+        }
+        with open(output.json, "w") as f:
+            json.dump(payload, f, indent=2)
+
+
+def _load_master_seeds():
+    ck = checkpoints.master_seed_manifest.get()
+    with open(ck.output.json) as f:
+        return json.load(f)
+
+
+def seeds_for_benchmark(wildcards):
+    data = _load_master_seeds()
+    n = get_config(wildcards.benchmark, "n_replicates")
+    rs = data["replicate_seeds"]
+    if n > len(rs):
+        raise ValueError(
+            f"master_seeds.json has {len(rs)} replicate seeds but "
+            f"{wildcards.benchmark!r} requires n_replicates={n}; rerun workflow or regenerate master_seeds.json"
+        )
+    return rs[:n]
+
+
+def get_seeds(wildcards):
+    return seeds_for_benchmark(wildcards)
+
+
+def get_map_seed(wildcards):
+    return _load_master_seeds()["map_seed"]
+
+
+def get_plot_seed(wildcards):
+    return seeds_for_benchmark(wildcards)[0]
 
 
 def get_plot_tool_bams(wildcards):
-    s = get_plot_seed(wildcards.benchmark)
+    s = get_plot_seed(wildcards)
     return [
         f"{wildcards.benchmark}/{t}.seed{s}.bam"
         for t in get_plot_tools(wildcards.benchmark)
@@ -151,14 +198,14 @@ def template_coefficient_input_paths(wildcards):
     return paths
 
 
-def get_uniform_pairwise_pairstat_paths(benchmark):
+def get_uniform_pairwise_pairstat_paths(wildcards):
     """Ordered tool×tool×seed pairstats paths; empty if not a uniform benchmark."""
-    if not uses_uniform_samsample(benchmark):
+    if not uses_uniform_samsample(wildcards.benchmark):
         return []
-    tools = get_comparison_tools(benchmark)
-    seeds = get_seeds(benchmark)
+    tools = get_comparison_tools(wildcards.benchmark)
+    seeds = get_seeds(wildcards)
     return [
-        f"{benchmark}/pairstats/{ta}.vs.{tb}.seed{s}.stats"
+        f"{wildcards.benchmark}/pairstats/{ta}.vs.{tb}.seed{s}.stats"
         for ta in tools
         for tb in tools
         for s in seeds
@@ -387,6 +434,7 @@ rule sambamba:
 rule samsampleX_map:
     """One BED template: combine depth from all configured template BAMs (map_mode from config)."""
     input:
+        master_seeds=MASTER_SEEDS_JSON,
         template_bams=lambda wc: get_templates(wc.benchmark),
         source="{benchmark}/source.bam",
         source_index="{benchmark}/source.bam.bai",
@@ -394,7 +442,7 @@ rule samsampleX_map:
         region=lambda wc: get_region(wc.benchmark),
         collapse=lambda wc: get_config(wc.benchmark, "collapse"),
         map_mode=lambda wc: get_map_mode(wc.benchmark),
-        map_seed=lambda wc: get_config(wc.benchmark, "seed"),
+        map_seed=lambda wc: get_map_seed(wc),
     output:
         bed="{benchmark}/samsampleX-template.bed",
     benchmark:
@@ -628,7 +676,7 @@ rule compare_stats_uniform_ordered_pair:
 
 rule uniform_pairwise_metrics_matrix:
     input:
-        pairstats=lambda wc: get_uniform_pairwise_pairstat_paths(wc.benchmark),
+        pairstats=lambda wc: get_uniform_pairwise_pairstat_paths(wc),
     output:
         matrix="{benchmark}/stats_pairwise_matrix.tsv",
     params:
@@ -659,7 +707,7 @@ rule uniform_pairwise_metrics_matrix:
             return data
 
         tools = get_comparison_tools(wildcards.benchmark)
-        seeds = get_seeds(wildcards.benchmark)
+        seeds = get_seeds(wildcards)
         # (tool_a, tool_b) -> list of {mae, wasserstein}
         by_pair = {(ta, tb): [] for ta in tools for tb in tools}
         for ta in tools:
@@ -701,16 +749,12 @@ rule uniform_pairwise_metrics_matrix:
                 out.write("\t".join(row_cells) + "\n")
 
 
-def get_all_benchmark_files(benchmark, pattern):
-    seeds = get_seeds(benchmark)
-    return [pattern.format(benchmark=benchmark, seed=s) for s in seeds]
-
 rule results:
     input:
         benchmarks=lambda wc: [
             f"{wc.benchmark}/benchmarks/{tool}.seed{seed}.tsv"
             for tool in get_comparison_tools(wc.benchmark)
-            for seed in get_seeds(wc.benchmark)
+            for seed in get_seeds(wc)
         ]
         + (
             []
@@ -728,7 +772,7 @@ rule results:
             return dict(zip(header, values))
         
         results = []
-        seeds = get_seeds(wildcards.benchmark)
+        seeds = get_seeds(wildcards)
         cmp_tools = get_comparison_tools(wildcards.benchmark)
         
         for tool in cmp_tools:
@@ -825,13 +869,13 @@ rule stats_summary:
             [
                 f"{wc.benchmark}/samsampleX-uniform.vs.{ref_tool}.seed{seed}.stats"
                 for ref_tool in get_non_samsamplex_comparison_tools(wc.benchmark)
-                for seed in get_seeds(wc.benchmark)
+                for seed in get_seeds(wc)
             ]
             if uses_uniform_samsample(wc.benchmark)
             else [
                 f"{wc.benchmark}/{tool}.seed{seed}.stats"
                 for tool in get_comparison_tools(wc.benchmark)
-                for seed in get_seeds(wc.benchmark)
+                for seed in get_seeds(wc)
             ]
         ),
     output:
@@ -867,7 +911,7 @@ rule stats_summary:
                             data['wasserstein'] = float(match.group(1))
             return data
         
-        seeds = get_seeds(wildcards.benchmark)
+        seeds = get_seeds(wildcards)
         if uses_uniform_samsample(wildcards.benchmark):
             ref_tools = get_non_samsamplex_comparison_tools(wildcards.benchmark)
             group_keys = [f"samsampleX-vs-{rt}" for rt in ref_tools]
@@ -935,12 +979,12 @@ rule samtools_depth_summary:
             [
                 f"{wc.benchmark}/{tool}.seed{seed}.bam"
                 for tool in get_comparison_tools(wc.benchmark)
-                for seed in get_seeds(wc.benchmark)
+                for seed in get_seeds(wc)
             ]
             + [
                 f"{wc.benchmark}/{tool}.seed{seed}.bam.bai"
                 for tool in get_comparison_tools(wc.benchmark)
-                for seed in get_seeds(wc.benchmark)
+                for seed in get_seeds(wc)
             ]
         ),
     output:
@@ -962,7 +1006,7 @@ rule samtools_depth_summary:
         benchmark = wildcards.benchmark
         region = get_region(benchmark)
         tools = get_comparison_tools(benchmark)
-        seeds = get_seeds(benchmark)
+        seeds = get_seeds(wildcards)
 
         def mean_depth_one_bam(bam_path):
             p = subprocess.Popen(
@@ -1196,6 +1240,7 @@ rule consolidated_summary:
 # If using --use-singularity globally, disable the container for this rule or use run: with host env.
 rule comparison_plot:
     input:
+        master_seeds=MASTER_SEEDS_JSON,
         consolidated="benchmark-{benchmark}.tsv",
         template_bed=lambda wc: (
             f"{wc.benchmark}/uniform-plot-template.bed"
@@ -1210,7 +1255,7 @@ rule comparison_plot:
         tsv="{benchmark}/{benchmark}-comparison.tsv",
     params:
         root=SAMSAMPLEX_ROOT,
-        plot_seed=lambda wc: get_plot_seed(wc.benchmark),
+        plot_seed=lambda wc: get_plot_seed(wc),
         config_relpath="benchmarks/config.yaml",
     resources:
         cpus=1,
