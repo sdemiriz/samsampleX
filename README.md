@@ -21,11 +21,9 @@ A Python-based tool for dynamic BAM file downsampling, unlike existing tools tha
 - Snakemake (benchmarking only)
 - pytest (testing only)
 
-### Build samsampleX
-```bash
-git clone https://github.com/sdemiriz/samsampleX.git
-cd samsampleX
-pip install .
+### Install samsampleX from PyPI
+```{bash}
+pip install samsampleX
 ```
 
 ## Usage
@@ -292,3 +290,12 @@ snakemake -p --use-apptainer --apptainer-args '--bind $(pwd)'
 ```
 
 A directory for all intermediate files will be created for each chunk defined in `config.yaml` and the final benchmark results will be made available in the `benchmarks` directory as `benchmark-{chunk_name}.tsv`.
+
+## Development 
+
+Get the most up-to-date version of samsampleX from Github and build locally.
+```bash
+git clone https://github.com/sdemiriz/samsampleX.git
+cd samsampleX
+pip install -e .
+```
