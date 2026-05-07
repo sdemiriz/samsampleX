@@ -1,5 +1,6 @@
 configfile: "config.yaml"
 
+import hashlib
 import os
 import re
 from textwrap import dedent
@@ -8,6 +9,36 @@ BENCHMARKS = list(config["benchmarks"].keys())
 
 # Significant figures for aggregated benchmark TSV numeric columns (see params.sigfigs on summary rules).
 BENCHMARK_OUTPUT_SIGFIGS = 3
+
+# Single preset for the whole benchmark workflow: every subsample RNG is derived from this value so runs are
+# reproducible without a seed manifest. Change this to invalidate/compare separate experiments.
+WORKFLOW_ROOT_SEED = 42
+_U31_MAX = 2**31 - 1
+
+
+def derive_u31(root: int, benchmark: str, tool: str, rep: int) -> int:
+    """Deterministic 31-bit subsample seed for (benchmark, tool, replicate index)."""
+    msg = f"{root}:{benchmark}:{tool}:{rep}".encode()
+    digest = hashlib.sha256(msg).digest()
+    return 1 + int.from_bytes(digest[:4], "big") % _U31_MAX
+
+
+def derive_map_seed(root: int, benchmark: str) -> int:
+    """RNG seed for samsampleX map (one value per benchmark)."""
+    msg = f"{root}:{benchmark}:samsampleX-map:0".encode()
+    digest = hashlib.sha256(msg).digest()
+    return 1 + int.from_bytes(digest[:4], "big") % _U31_MAX
+
+
+def replicate_indices(benchmark: str) -> list[int]:
+    """Replicate indices 1 .. n_replicates (paths use ``rep`` wildcards; RNG per tool is derive_u31(...))."""
+    n = get_config(benchmark, "n_replicates")
+    return list(range(1, n + 1))
+
+
+def plot_replicate_index() -> int:
+    """Which replicate index to pass to plot.py for selecting tool BAMs (first replicate)."""
+    return 1
 
 # Subset of tool names used as {tool} wildcard in index_output_bam / compare_stats.
 TOOL_PATTERN = (
@@ -80,10 +111,6 @@ def get_sample_mode(benchmark):
     return get_config(benchmark, "sample_mode")
 
 
-def get_seeds(benchmark):
-    cfg = config["benchmarks"][benchmark]
-    return [cfg["seed"] + i for i in range(1, cfg["n_replicates"] + 1)]
-
 def get_region(benchmark):
     cfg = config["benchmarks"][benchmark]
     return f"{cfg['chr']}:{cfg['start']}-{cfg['end']}"
@@ -111,15 +138,10 @@ SNAKE_DIR = os.path.dirname(workflow.snakefile)
 SAMSAMPLEX_ROOT = os.path.normpath(os.path.join(SNAKE_DIR, ".."))
 
 
-def get_plot_seed(benchmark):
-    """First replicate seed; matches plot.py default when config seed is one less."""
-    return get_config(benchmark, "seed") + 1
-
-
 def get_plot_tool_bams(wildcards):
-    s = get_plot_seed(wildcards.benchmark)
+    r = plot_replicate_index()
     return [
-        f"{wildcards.benchmark}/{t}.seed{s}.bam"
+        f"{wildcards.benchmark}/{t}.rep{r}.bam"
         for t in get_plot_tools(wildcards.benchmark)
     ]
 
@@ -152,16 +174,16 @@ def template_coefficient_input_paths(wildcards):
 
 
 def get_uniform_pairwise_pairstat_paths(benchmark):
-    """Ordered tool×tool×seed pairstats paths; empty if not a uniform benchmark."""
+    """Ordered tool×tool×replicate pairstats paths; empty if not a uniform benchmark."""
     if not uses_uniform_samsample(benchmark):
         return []
     tools = get_comparison_tools(benchmark)
-    seeds = get_seeds(benchmark)
+    reps = replicate_indices(benchmark)
     return [
-        f"{benchmark}/pairstats/{ta}.vs.{tb}.seed{s}.stats"
+        f"{benchmark}/pairstats/{ta}.vs.{tb}.rep{r}.stats"
         for ta in tools
         for tb in tools
-        for s in seeds
+        for r in reps
     ]
 
 
@@ -258,11 +280,15 @@ rule GATK_HighAccuracy:
         index="{benchmark}/source.bam.bai",
         coefficient="{benchmark}/coefficient.txt",
     output:
-        bam="{benchmark}/gatk-high-accuracy.seed{seed}.bam",
+        bam="{benchmark}/gatk-high-accuracy.rep{rep}.bam",
     benchmark:
-        "{benchmark}/benchmarks/gatk-high-accuracy.seed{seed}.tsv"
+        "{benchmark}/benchmarks/gatk-high-accuracy.rep{rep}.tsv"
+    params:
+        rng_seed=lambda wc: derive_u31(
+            WORKFLOW_ROOT_SEED, wc.benchmark, "gatk-high-accuracy", int(wc.rep)
+        ),
     wildcard_constraints:
-        seed=r"\d+",
+        rep=r"\d+",
     resources:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
@@ -274,7 +300,7 @@ rule GATK_HighAccuracy:
         gatk --java-options "-Xmx{resources.mem_mb}m" DownsampleSam \
         -S HighAccuracy \
         -P "$(cat {input.coefficient})" \
-        -R {wildcards.seed} \
+        -R {params.rng_seed} \
         -I {input.bam} \
         -O {output.bam}
         """
@@ -285,11 +311,15 @@ rule GATK_ConstantMemory:
         index="{benchmark}/source.bam.bai",
         coefficient="{benchmark}/coefficient.txt",
     output:
-        bam="{benchmark}/gatk-constant-memory.seed{seed}.bam",
+        bam="{benchmark}/gatk-constant-memory.rep{rep}.bam",
     benchmark:
-        "{benchmark}/benchmarks/gatk-constant-memory.seed{seed}.tsv"
+        "{benchmark}/benchmarks/gatk-constant-memory.rep{rep}.tsv"
+    params:
+        rng_seed=lambda wc: derive_u31(
+            WORKFLOW_ROOT_SEED, wc.benchmark, "gatk-constant-memory", int(wc.rep)
+        ),
     wildcard_constraints:
-        seed=r"\d+",
+        rep=r"\d+",
     resources:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
@@ -301,7 +331,7 @@ rule GATK_ConstantMemory:
         gatk --java-options "-Xmx{resources.mem_mb}m" DownsampleSam \
         -S ConstantMemory \
         -P "$(cat {input.coefficient})" \
-        -R {wildcards.seed} \
+        -R {params.rng_seed} \
         -I {input.bam} \
         -O {output.bam}
         """
@@ -312,11 +342,15 @@ rule GATK_Chained:
         index="{benchmark}/source.bam.bai",
         coefficient="{benchmark}/coefficient.txt",
     output:
-        bam="{benchmark}/gatk-chained.seed{seed}.bam",
+        bam="{benchmark}/gatk-chained.rep{rep}.bam",
     benchmark:
-        "{benchmark}/benchmarks/gatk-chained.seed{seed}.tsv"
+        "{benchmark}/benchmarks/gatk-chained.rep{rep}.tsv"
+    params:
+        rng_seed=lambda wc: derive_u31(
+            WORKFLOW_ROOT_SEED, wc.benchmark, "gatk-chained", int(wc.rep)
+        ),
     wildcard_constraints:
-        seed=r"\d+",
+        rep=r"\d+",
     resources:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
@@ -328,7 +362,7 @@ rule GATK_Chained:
         gatk --java-options "-Xmx{resources.mem_mb}m" DownsampleSam \
         -S Chained \
         -P "$(cat {input.coefficient})" \
-        -R {wildcards.seed} \
+        -R {params.rng_seed} \
         -I {input.bam} \
         -O {output.bam}
         """
@@ -339,11 +373,13 @@ rule samtools:
         index="{benchmark}/source.bam.bai",
         coefficient="{benchmark}/coefficient.txt",
     output:
-        bam="{benchmark}/samtools.seed{seed}.bam",
+        bam="{benchmark}/samtools.rep{rep}.bam",
     benchmark:
-        "{benchmark}/benchmarks/samtools.seed{seed}.tsv"
+        "{benchmark}/benchmarks/samtools.rep{rep}.tsv"
+    params:
+        rng_seed=lambda wc: derive_u31(WORKFLOW_ROOT_SEED, wc.benchmark, "samtools", int(wc.rep)),
     wildcard_constraints:
-        seed=r"\d+",
+        rep=r"\d+",
     resources:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
@@ -354,7 +390,7 @@ rule samtools:
         """
         samtools view {input.bam} \
         --subsample "$(cat {input.coefficient})" \
-        --subsample-seed {wildcards.seed} \
+        --subsample-seed {params.rng_seed} \
         -b -o {output.bam}
         """
 
@@ -364,11 +400,13 @@ rule sambamba:
         index="{benchmark}/source.bam.bai",
         coefficient="{benchmark}/coefficient.txt",
     output:
-        bam="{benchmark}/sambamba.seed{seed}.bam",
+        bam="{benchmark}/sambamba.rep{rep}.bam",
     benchmark:
-        "{benchmark}/benchmarks/sambamba.seed{seed}.tsv"
+        "{benchmark}/benchmarks/sambamba.rep{rep}.tsv"
+    params:
+        rng_seed=lambda wc: derive_u31(WORKFLOW_ROOT_SEED, wc.benchmark, "sambamba", int(wc.rep)),
     wildcard_constraints:
-        seed=r"\d+",
+        rep=r"\d+",
     resources:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
@@ -380,7 +418,7 @@ rule sambamba:
         sambamba view {input.bam} \
         -f bam \
         --subsample "$(cat {input.coefficient})" \
-        --subsampling-seed {wildcards.seed} \
+        --subsampling-seed {params.rng_seed} \
         -o {output.bam}
         """
 
@@ -394,7 +432,7 @@ rule samsampleX_map:
         region=lambda wc: get_region(wc.benchmark),
         collapse=lambda wc: get_config(wc.benchmark, "collapse"),
         map_mode=lambda wc: get_map_mode(wc.benchmark),
-        map_seed=lambda wc: get_config(wc.benchmark, "seed"),
+        map_seed=lambda wc: derive_map_seed(WORKFLOW_ROOT_SEED, wc.benchmark),
     output:
         bed="{benchmark}/samsampleX-template.bed",
     benchmark:
@@ -429,12 +467,15 @@ rule samsampleX_sampling:
     params:
         sample_mode=lambda wc: get_sample_mode(wc.benchmark),
         region=lambda wc: get_region(wc.benchmark),
+        rng_seed=lambda wc: derive_u31(
+            WORKFLOW_ROOT_SEED, wc.benchmark, "samsampleX-sample", int(wc.rep)
+        ),
     wildcard_constraints:
-        seed=r"\d+",
+        rep=r"\d+",
     output:
-        bam="{benchmark}/samsampleX-sample.seed{seed}.bam",
+        bam="{benchmark}/samsampleX-sample.rep{rep}.bam",
     benchmark:
-        "{benchmark}/benchmarks/samsampleX-sample.seed{seed}.tsv"
+        "{benchmark}/benchmarks/samsampleX-sample.rep{rep}.tsv"
     resources:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
@@ -448,7 +489,7 @@ rule samsampleX_sampling:
         --template-bed {input.template_bed} \
         --out-bam {output.bam} \
         --region {params.region} \
-        --seed {wildcards.seed} \
+        --seed {params.rng_seed} \
         --stat {params.sample_mode}
         """
 
@@ -498,12 +539,15 @@ rule samsampleX_uniform:
         coefficient="{benchmark}/coefficient.txt",
     params:
         region=lambda wc: get_region(wc.benchmark),
+        rng_seed=lambda wc: derive_u31(
+            WORKFLOW_ROOT_SEED, wc.benchmark, "samsampleX-uniform", int(wc.rep)
+        ),
     wildcard_constraints:
-        seed=r"\d+",
+        rep=r"\d+",
     output:
-        bam="{benchmark}/samsampleX-uniform.seed{seed}.bam",
+        bam="{benchmark}/samsampleX-uniform.rep{rep}.bam",
     benchmark:
-        "{benchmark}/benchmarks/samsampleX-uniform.seed{seed}.tsv"
+        "{benchmark}/benchmarks/samsampleX-uniform.rep{rep}.tsv"
     resources:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
@@ -517,17 +561,17 @@ rule samsampleX_uniform:
         --uniform "$(cat {input.coefficient})" \
         --out-bam {output.bam} \
         --region {params.region} \
-        --seed {wildcards.seed}
+        --seed {params.rng_seed}
         """
 
 rule index_output_bam:
     """Index output BAM files for stats comparison"""
     input:
-        bam="{benchmark}/{tool}.seed{seed}.bam"
+        bam="{benchmark}/{tool}.rep{rep}.bam"
     output:
-        index="{benchmark}/{tool}.seed{seed}.bam.bai"
+        index="{benchmark}/{tool}.rep{rep}.bam.bai"
     wildcard_constraints:
-        seed=r"\d+",
+        rep=r"\d+",
         tool=TOOL_PATTERN,
     container:
         "bench.sif"
@@ -539,16 +583,16 @@ rule index_output_bam:
 rule compare_stats:
     """samsampleX stats: reference (BED or BAM) vs each tool output."""
     input:
-        tool_bam="{benchmark}/{tool}.seed{seed}.bam",
-        tool_index="{benchmark}/{tool}.seed{seed}.bam.bai",
+        tool_bam="{benchmark}/{tool}.rep{rep}.bam",
+        tool_index="{benchmark}/{tool}.rep{rep}.bam.bai",
         reference=lambda wc: get_stats_reference(wc.benchmark),
     params:
         region=lambda wc: get_region(wc.benchmark),
     wildcard_constraints:
-        seed=r"\d+",
+        rep=r"\d+",
         tool=TOOL_PATTERN,
     output:
-        stats="{benchmark}/{tool}.seed{seed}.stats"
+        stats="{benchmark}/{tool}.rep{rep}.stats"
     resources:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
@@ -567,17 +611,17 @@ rule compare_stats:
 # Uniform benchmarks only (requested via stats_summary inputs). BAM A = competitor, B = samsampleX-uniform.
 rule compare_stats_uniform_pairwise:
     input:
-        ref_bam="{benchmark}/{ref_tool}.seed{seed}.bam",
-        ref_index="{benchmark}/{ref_tool}.seed{seed}.bam.bai",
-        samsamplex_bam="{benchmark}/samsampleX-uniform.seed{seed}.bam",
-        samsamplex_index="{benchmark}/samsampleX-uniform.seed{seed}.bam.bai",
+        ref_bam="{benchmark}/{ref_tool}.rep{rep}.bam",
+        ref_index="{benchmark}/{ref_tool}.rep{rep}.bam.bai",
+        samsamplex_bam="{benchmark}/samsampleX-uniform.rep{rep}.bam",
+        samsamplex_index="{benchmark}/samsampleX-uniform.rep{rep}.bam.bai",
     params:
         region=lambda wc: get_region(wc.benchmark),
     wildcard_constraints:
-        seed=r"\d+",
+        rep=r"\d+",
         ref_tool=REF_TOOL_PATTERN,
     output:
-        stats="{benchmark}/samsampleX-uniform.vs.{ref_tool}.seed{seed}.stats",
+        stats="{benchmark}/samsampleX-uniform.vs.{ref_tool}.rep{rep}.stats",
     resources:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
@@ -597,18 +641,18 @@ rule compare_stats_uniform_pairwise:
 # Uniform only: BAM A = tool_a, B = tool_b (filename matches samsampleX stats orientation).
 rule compare_stats_uniform_ordered_pair:
     input:
-        bam_a="{benchmark}/{tool_a}.seed{seed}.bam",
-        index_a="{benchmark}/{tool_a}.seed{seed}.bam.bai",
-        bam_b="{benchmark}/{tool_b}.seed{seed}.bam",
-        index_b="{benchmark}/{tool_b}.seed{seed}.bam.bai",
+        bam_a="{benchmark}/{tool_a}.rep{rep}.bam",
+        index_a="{benchmark}/{tool_a}.rep{rep}.bam.bai",
+        bam_b="{benchmark}/{tool_b}.rep{rep}.bam",
+        index_b="{benchmark}/{tool_b}.rep{rep}.bam.bai",
     params:
         region=lambda wc: get_region(wc.benchmark),
     wildcard_constraints:
-        seed=r"\d+",
+        rep=r"\d+",
         tool_a=TOOL_PATTERN,
         tool_b=TOOL_PATTERN,
     output:
-        stats="{benchmark}/pairstats/{tool_a}.vs.{tool_b}.seed{seed}.stats",
+        stats="{benchmark}/pairstats/{tool_a}.vs.{tool_b}.rep{rep}.stats",
     resources:
         cpus=lambda wc: get_config(wc.benchmark, "cpu"),
         mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
@@ -659,13 +703,13 @@ rule uniform_pairwise_metrics_matrix:
             return data
 
         tools = get_comparison_tools(wildcards.benchmark)
-        seeds = get_seeds(wildcards.benchmark)
+        reps = replicate_indices(wildcards.benchmark)
         # (tool_a, tool_b) -> list of {mae, wasserstein}
         by_pair = {(ta, tb): [] for ta in tools for tb in tools}
         for ta in tools:
             for tb in tools:
-                for seed in seeds:
-                    fp = f"{wildcards.benchmark}/pairstats/{ta}.vs.{tb}.seed{seed}.stats"
+                for rep in reps:
+                    fp = f"{wildcards.benchmark}/pairstats/{ta}.vs.{tb}.rep{rep}.stats"
                     parsed = parse_stats_file(fp)
                     if parsed:
                         by_pair[(ta, tb)].append(parsed)
@@ -702,15 +746,15 @@ rule uniform_pairwise_metrics_matrix:
 
 
 def get_all_benchmark_files(benchmark, pattern):
-    seeds = get_seeds(benchmark)
-    return [pattern.format(benchmark=benchmark, seed=s) for s in seeds]
+    reps = replicate_indices(benchmark)
+    return [pattern.format(benchmark=benchmark, rep=r) for r in reps]
 
 rule results:
     input:
         benchmarks=lambda wc: [
-            f"{wc.benchmark}/benchmarks/{tool}.seed{seed}.tsv"
+            f"{wc.benchmark}/benchmarks/{tool}.rep{rep}.tsv"
             for tool in get_comparison_tools(wc.benchmark)
-            for seed in get_seeds(wc.benchmark)
+            for rep in replicate_indices(wc.benchmark)
         ]
         + (
             []
@@ -728,31 +772,31 @@ rule results:
             return dict(zip(header, values))
         
         results = []
-        seeds = get_seeds(wildcards.benchmark)
+        reps = replicate_indices(wildcards.benchmark)
         cmp_tools = get_comparison_tools(wildcards.benchmark)
-        
+
         for tool in cmp_tools:
-            for seed in seeds:
-                path = f"{wildcards.benchmark}/benchmarks/{tool}.seed{seed}.tsv"
+            for rep in reps:
+                path = f"{wildcards.benchmark}/benchmarks/{tool}.rep{rep}.tsv"
                 data = parse_benchmark(path)
                 data["tool"] = tool
-                data["seed"] = str(seed)
+                data["rep"] = str(rep)
                 results.append(data)
-        
+
         # samsampleX map (single run combining all template BAMs); not used for uniform benchmarks
         if not uses_uniform_samsample(wildcards.benchmark):
             path = f"{wildcards.benchmark}/benchmarks/samsampleX-map.tsv"
             data = parse_benchmark(path)
             data["tool"] = "samsampleX-map"
-            data["seed"] = "NA"
+            data["rep"] = "NA"
             results.append(data)
-        
+
         headers = ["s", "h:m:s", "max_rss", "max_vms", "max_uss", "max_pss", "io_in", "io_out", "mean_load", "cpu_time"]
-        
+
         with open(output.results, 'w') as out:
-            out.write('\t'.join(['tool', 'seed'] + headers) + '\n')
+            out.write('\t'.join(['tool', 'rep'] + headers) + '\n')
             for data in results:
-                row = [data.get("tool", ""), data.get("seed", "")] + [data.get(h, '') for h in headers]
+                row = [data.get("tool", ""), data.get("rep", "")] + [data.get(h, '') for h in headers]
                 out.write('\t'.join(row) + '\n')
 
 
@@ -823,15 +867,15 @@ rule stats_summary:
     input:
         stats=lambda wc: (
             [
-                f"{wc.benchmark}/samsampleX-uniform.vs.{ref_tool}.seed{seed}.stats"
+                f"{wc.benchmark}/samsampleX-uniform.vs.{ref_tool}.rep{rep}.stats"
                 for ref_tool in get_non_samsamplex_comparison_tools(wc.benchmark)
-                for seed in get_seeds(wc.benchmark)
+                for rep in replicate_indices(wc.benchmark)
             ]
             if uses_uniform_samsample(wc.benchmark)
             else [
-                f"{wc.benchmark}/{tool}.seed{seed}.stats"
+                f"{wc.benchmark}/{tool}.rep{rep}.stats"
                 for tool in get_comparison_tools(wc.benchmark)
-                for seed in get_seeds(wc.benchmark)
+                for rep in replicate_indices(wc.benchmark)
             ]
         ),
     output:
@@ -861,21 +905,28 @@ rule stats_summary:
                         match = re.search(r'([\d.]+)\s*$', line)
                         if match:
                             data['mae'] = float(match.group(1))
+                    elif "Mean signed depth diff:" in line:
+                        match = re.search(
+                            r'Mean signed depth diff:\s*([+-]?[\d.]+(?:[eE][+-]?\d+)?)',
+                            line,
+                        )
+                        if match:
+                            data["signed_depth"] = float(match.group(1))
                     elif "Wasserstein" in line:
                         match = re.search(r'([\d.]+)\s*$', line)
                         if match:
                             data['wasserstein'] = float(match.group(1))
             return data
         
-        seeds = get_seeds(wildcards.benchmark)
+        reps = replicate_indices(wildcards.benchmark)
         if uses_uniform_samsample(wildcards.benchmark):
             ref_tools = get_non_samsamplex_comparison_tools(wildcards.benchmark)
             group_keys = [f"samsampleX-vs-{rt}" for rt in ref_tools]
             tool_results = {k: [] for k in group_keys}
             for ref_tool in ref_tools:
                 label = f"samsampleX-vs-{ref_tool}"
-                for seed in seeds:
-                    filepath = f"{wildcards.benchmark}/samsampleX-uniform.vs.{ref_tool}.seed{seed}.stats"
+                for rep in reps:
+                    filepath = f"{wildcards.benchmark}/samsampleX-uniform.vs.{ref_tool}.rep{rep}.stats"
                     data = parse_stats_file(filepath)
                     if data:
                         tool_results[label].append(data)
@@ -884,15 +935,15 @@ rule stats_summary:
             cmp_tools = get_comparison_tools(wildcards.benchmark)
             tool_results = {tool: [] for tool in cmp_tools}
             for tool in cmp_tools:
-                for seed in seeds:
-                    filepath = f"{wildcards.benchmark}/{tool}.seed{seed}.stats"
+                for rep in reps:
+                    filepath = f"{wildcards.benchmark}/{tool}.rep{rep}.stats"
                     data = parse_stats_file(filepath)
                     if data:
                         tool_results[tool].append(data)
             row_order = cmp_tools
         
         summary_rows = []
-        metrics = ['mae', 'wasserstein', 'mean_depth_tool']
+        metrics = ["mae", "signed_depth", "wasserstein", "mean_depth_tool"]
         
         for tool in row_order:
             results = tool_results[tool]
@@ -912,8 +963,17 @@ rule stats_summary:
             
             summary_rows.append(row)
         
-        headers = ['tool', 'mae_mean', 'mae_std', 'wasserstein_mean', 'wasserstein_std',
-                   'mean_depth_tool_mean', 'mean_depth_tool_std']
+        headers = [
+            "tool",
+            "mae_mean",
+            "mae_std",
+            "signed_depth_mean",
+            "signed_depth_std",
+            "wasserstein_mean",
+            "wasserstein_std",
+            "mean_depth_tool_mean",
+            "mean_depth_tool_std",
+        ]
         
         with open(output.summary, 'w') as out:
             out.write('\t'.join(headers) + '\n')
@@ -933,14 +993,14 @@ rule samtools_depth_summary:
     input:
         lambda wc: (
             [
-                f"{wc.benchmark}/{tool}.seed{seed}.bam"
+                f"{wc.benchmark}/{tool}.rep{rep}.bam"
                 for tool in get_comparison_tools(wc.benchmark)
-                for seed in get_seeds(wc.benchmark)
+                for rep in replicate_indices(wc.benchmark)
             ]
             + [
-                f"{wc.benchmark}/{tool}.seed{seed}.bam.bai"
+                f"{wc.benchmark}/{tool}.rep{rep}.bam.bai"
                 for tool in get_comparison_tools(wc.benchmark)
-                for seed in get_seeds(wc.benchmark)
+                for rep in replicate_indices(wc.benchmark)
             ]
         ),
     output:
@@ -962,7 +1022,7 @@ rule samtools_depth_summary:
         benchmark = wildcards.benchmark
         region = get_region(benchmark)
         tools = get_comparison_tools(benchmark)
-        seeds = get_seeds(benchmark)
+        reps = replicate_indices(benchmark)
 
         def mean_depth_one_bam(bam_path):
             p = subprocess.Popen(
@@ -989,8 +1049,8 @@ rule samtools_depth_summary:
         rows_out = []
         for tool in tools:
             per_seed = []
-            for seed in seeds:
-                bam = f"{benchmark}/{tool}.seed{seed}.bam"
+            for rep in reps:
+                bam = f"{benchmark}/{tool}.rep{rep}.bam"
                 m = mean_depth_one_bam(bam)
                 if m is not None:
                     per_seed.append(m)
@@ -1066,10 +1126,16 @@ rule consolidated_summary:
                 tool = fields[0]
                 
                 accuracy_data[tool] = {
-                    'mae_mean': fields[col_idx.get('mae_mean', -1)],
-                    'mae_std': fields[col_idx.get('mae_std', -1)],
-                    'w1_mean': fields[col_idx.get('wasserstein_mean', -1)],
-                    'w1_std': fields[col_idx.get('wasserstein_std', -1)],
+                    "mae_mean": fields[col_idx.get("mae_mean", -1)],
+                    "mae_std": fields[col_idx.get("mae_std", -1)],
+                    "signed_depth_mean": fields[
+                        col_idx.get("signed_depth_mean", -1)
+                    ],
+                    "signed_depth_std": fields[
+                        col_idx.get("signed_depth_std", -1)
+                    ],
+                    "w1_mean": fields[col_idx.get("wasserstein_mean", -1)],
+                    "w1_std": fields[col_idx.get("wasserstein_std", -1)],
                 }
 
         depth_data = {}
@@ -1122,6 +1188,17 @@ rule consolidated_summary:
             except (ValueError, TypeError):
                 mae_str = "NA"
             try:
+                sm, ss = acc.get("signed_depth_mean"), acc.get("signed_depth_std")
+                if sm in (None, "", "NA") or ss in (None, "", "NA"):
+                    signed_str = "NA"
+                else:
+                    signed_str = (
+                        f"{format_float_sigfigs(float(sm), sf)} "
+                        f"({format_float_sigfigs(float(ss), sf)})"
+                    )
+            except (ValueError, TypeError):
+                signed_str = "NA"
+            try:
                 wm1, ws1 = acc.get("w1_mean"), acc.get("w1_std")
                 if wm1 in (None, "", "NA") or ws1 in (None, "", "NA"):
                     w1_str = "NA"
@@ -1132,11 +1209,15 @@ rule consolidated_summary:
                     )
             except (ValueError, TypeError):
                 w1_str = "NA"
-            return f"{tool}\t{wall_str}\t{mem_str}\t{coeff_str}\t{d_str}\t{mae_str}\t{w1_str}\n"
+            return (
+                f"{tool}\t{wall_str}\t{mem_str}\t{coeff_str}\t{d_str}\t"
+                f"{mae_str}\t{signed_str}\t{w1_str}\n"
+            )
 
         with open(output.consolidated, 'w') as out:
             out.write(
-                "Tool\tWall Clock (s)\tMemory (GB)\tCoefficient\tDepth (samtools)\tMAE\tW1\n"
+                "Tool\tWall Clock (s)\tMemory (GB)\tCoefficient\tDepth (samtools)\t"
+                "MAE\tMean signed depth diff\tW1\n"
             )
             if uses_uniform_samsample(wildcards.benchmark):
                 competitors = get_non_samsamplex_comparison_tools(wildcards.benchmark)
@@ -1210,7 +1291,7 @@ rule comparison_plot:
         tsv="{benchmark}/{benchmark}-comparison.tsv",
     params:
         root=SAMSAMPLEX_ROOT,
-        plot_seed=lambda wc: get_plot_seed(wc.benchmark),
+        plot_replicate=1,
         config_relpath="benchmarks/config.yaml",
     resources:
         cpus=1,
@@ -1218,5 +1299,5 @@ rule comparison_plot:
         time="1:00:00",
     shell:
         """
-        cd {params.root} && python plot.py --config {params.config_relpath} --benchmark {wildcards.benchmark} --seed {params.plot_seed} --output-dir benchmarks/{wildcards.benchmark}
+        cd {params.root} && python plot.py --config {params.config_relpath} --benchmark {wildcards.benchmark} --seed {params.plot_replicate} --output-dir benchmarks/{wildcards.benchmark}
         """

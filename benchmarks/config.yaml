@@ -1,23 +1,21 @@
 benchmarks:
-  # wgs-uniform-30x:
-  #   chr: "chr21"
-  #   start: 1
-  #   end: 46709982
-  #   seed: 42
-  #   n_replicates: 10
+  wgs-uniform-30x:
+    chr: "chr21"
+    start: 1
+    end: 46709982
+    n_replicates: 10
 
-  #   source: "HG002.GRCh38.300x.bam"
-  #   coefficient: 0.1
+    source: "HG002.GRCh38.300x.bam"
+    coefficient: 0.1
 
-  #   cpu: 2
-  #   mem_mb: 16384
-  #   time: "30:00"
+    cpu: 2
+    mem_mb: 16384
+    time: "30:00"
 
   # wgs-uniform-5x:
   #   chr: "chr21"
   #   start: 1
   #   end: 46709982
-  #   seed: 42
   #   n_replicates: 10
 
   #   source: "HG002.GRCh38.300x.bam"
@@ -27,448 +25,55 @@ benchmarks:
   #   mem_mb: 16384
   #   time: "30:00"
 
-  # wgs-chr21:
-  #   chr: "chr21"
-  #   start: 1
-  #   end: 46709982
-  #   seed: 42
-  #   n_replicates: 10
-
-  #   collapse: 0
-  #   templates:
-  #       - HG01363.bam
-  #       - HG01941.bam
-  #       - HG02122.bam
-  #       - HG02127.bam
-  #       - HG02291.bam
-  #       - HG02678.bam
-  #       - HG03593.bam
-  #       - HG03780.bam
-  #       - HG03965.bam
-  #       - NA18547.bam
-
-  #   map_mode: "mean"
-  #   sample_mode: "mean"
-  #   source: "HG002.GRCh38.300x.bam"
-
-  #   coefficient: 0.1516005575
-
-  #   cpu: 2
-  #   mem_mb: 16384
-  #   time: "30:00"
-
-  # wegs-8p5x-chr21:
-  #   chr: "chr21"
-  #   start: 1
-  #   end: 46709982
-  #   seed: 42
-  #   n_replicates: 10
-
-  #   collapse: 0
-  #   templates:
-  #     - "HG002-WEGS-8P5X-R1.bam"
-
-  #   map_mode: "mean"
-  #   sample_mode: "mean"
-  #   source: "HG002.GRCh38.300x.bam"
-
-  #   coefficient: 0.0387997079
-
-  #   cpu: 2
-  #   mem_mb: 16384
-  #   time: "30:00"
-
-  # wgs-brca1:
-  #   chr: "chr17"
-  #   start: 43044295
-  #   end: 43170245
-  #   seed: 42
-  #   n_replicates: 10
-
-  #   collapse: 0
-  #   templates:
-  #     - HG01363.bam
-  #     - HG01941.bam
-  #     - HG02122.bam
-  #     - HG02127.bam
-  #     - HG02291.bam
-  #     - HG02678.bam
-  #     - HG03593.bam
-  #     - HG03780.bam
-  #     - HG03965.bam
-  #     - NA18547.bam
-
-  #   map_mode: "mean"
-  #   sample_mode: "mean"
-  #   source: "HG002.GRCh38.300x.bam"
-
-  #   coefficient: 0.1302768796
-
-  #   cpu: 2
-  #   mem_mb: 16384
-  #   time: "30:00"
-
-  # wegs-8p5x-brca1:
-  #   chr: "chr17"
-  #   start: 43044295
-  #   end: 43170245
-  #   seed: 42
-  #   n_replicates: 10
-
-  #   collapse: 0
-  #   templates:
-  #     - "HG002-WEGS-8P5X-R1.bam"
-
-  #   map_mode: "mean"
-  #   sample_mode: "mean"
-  #   source: "HG002.GRCh38.300x.bam"
-
-  #   coefficient: 0.0693603
-
-  #   cpu: 2
-  #   mem_mb: 16384
-  #   time: "30:00"
-
-  # wgs-tp53:
-  #   chr: "chr17"
-  #   start: 7661779
-  #   end: 7687538
-  #   seed: 42
-  #   n_replicates: 10
-
-  #   collapse: 0
-  #   templates:
-  #     - HG01363.bam
-  #     - HG01941.bam
-  #     - HG02122.bam
-  #     - HG02127.bam
-  #     - HG02291.bam
-  #     - HG02678.bam
-  #     - HG03593.bam
-  #     - HG03780.bam
-  #     - HG03965.bam
-  #     - NA18547.bam
-
-  #   map_mode: "mean"
-  #   sample_mode: "mean"
-  #   source: "HG002.GRCh38.300x.bam"
-
-  #   coefficient: 0.1401488970
-
-  #   cpu: 2
-  #   mem_mb: 16384
-  #   time: "30:00"
-
-  # wegs-8p5x-tp53:
-  #   chr: "chr17"
-  #   start: 7661779
-  #   end: 7687538
-  #   seed: 42
-  #   n_replicates: 10
-
-  #   collapse: 0
-  #   templates:
-  #     - "HG002-WEGS-8P5X-R1.bam"
-
-  #   map_mode: "mean"
-  #   sample_mode: "mean"
-  #   source: "HG002.GRCh38.300x.bam"
-
-  #   coefficient: 0.2342326365
-
-  #   cpu: 2
-  #   mem_mb: 16384
-  #   time: "30:00"
-
-  # wgs-hla-a:
-  #   chr: "chr6"
-  #   start: 29941260
-  #   end: 29945884
-  #   seed: 42
-  #   n_replicates: 10
-
-  #   collapse: 0
-  #   templates:
-  #       - HG01363.bam
-  #       - HG01941.bam
-  #       - HG02122.bam
-  #       - HG02127.bam
-  #       - HG02291.bam
-  #       - HG02678.bam
-  #       - HG03593.bam
-  #       - HG03780.bam
-  #       - HG03965.bam
-  #       - NA18547.bam
-  #   map_mode: "mean"
-  #   sample_mode: "mean"
-  #   source: "HG002.GRCh38.300x.bam"
-
-  #   coefficient: 0.0782470841
-
-  #   cpu: 2
-  #   mem_mb: 16384  
-  #   time: "30:00"
-
-  # wegs-8p5x-hla-a:
-  #   chr: "chr6"
-  #   start: 29941260
-  #   end: 29945884
-  #   seed: 42
-  #   n_replicates: 10
-
-  #   collapse: 0
-  #   templates:
-  #     - "HG002-WEGS-8P5X-R1.bam"
-
-  #   map_mode: "mean"
-  #   sample_mode: "mean"
-  #   source: "HG002.GRCh38.300x.bam"
-
-  #   coefficient: 0.0613747
-
-  #   cpu: 2
-  #   mem_mb: 16384
-  #   time: "30:00"
-
-  # wgs-brca1:
-  #   chr: "chr17"
-  #   start: 43044295
-  #   end: 43170245
-  #   seed: 42
-  #   n_replicates: 10
-
-  #   collapse: 0
-  #   templates:
-  #     - HG01363.bam
-  #     - HG01941.bam
-  #     - HG02122.bam
-  #     - HG02127.bam
-  #     - HG02291.bam
-  #     - HG02678.bam
-  #     - HG03593.bam
-  #     - HG03780.bam
-  #     - HG03965.bam
-  #     - NA18547.bam
-
-  #   map_mode: "mean"
-  #   sample_mode: "mean"
-  #   source: "HG002.GRCh38.300x.bam"
-
-  #   coefficient: 0.1302768796
-
-  #   cpu: 2
-  #   mem_mb: 16384
-  #   time: "30:00"
-
-  # wegs-8p5x-brca1:
-  #   chr: "chr17"
-  #   start: 43044295
-  #   end: 43170245
-  #   seed: 42
-  #   n_replicates: 10
-
-  #   collapse: 0
-  #   templates:
-  #     - "HG002-WEGS-8P5X-R1.bam"
-
-  #   map_mode: "mean"
-  #   sample_mode: "mean"
-  #   source: "HG002.GRCh38.300x.bam"
-
-  #   coefficient: 0.0693603
-
-  #   cpu: 2
-  #   mem_mb: 16384
-  #   time: "30:00"
-
-  # wgs-tp53:
-  #   chr: "chr17"
-  #   start: 7661779
-  #   end: 7687538
-  #   seed: 42
-  #   n_replicates: 10
-
-  #   collapse: 0
-  #   templates:
-  #     - HG01363.bam
-  #     - HG01941.bam
-  #     - HG02122.bam
-  #     - HG02127.bam
-  #     - HG02291.bam
-  #     - HG02678.bam
-  #     - HG03593.bam
-  #     - HG03780.bam
-  #     - HG03965.bam
-  #     - NA18547.bam
-
-  #   map_mode: "mean"
-  #   sample_mode: "mean"
-  #   source: "HG002.GRCh38.300x.bam"
-
-  #   coefficient: 0.1401488970
-
-  #   cpu: 2
-  #   mem_mb: 16384
-  #   time: "30:00"
-
-  # wegs-8p5x-tp53:
-  #   chr: "chr17"
-  #   start: 7661779
-  #   end: 7687538
-  #   seed: 42
-  #   n_replicates: 10
-
-  #   collapse: 0
-  #   templates:
-  #     - "HG002-WEGS-8P5X-R1.bam"
-
-  #   map_mode: "mean"
-  #   sample_mode: "mean"
-  #   source: "HG002.GRCh38.300x.bam"
-
-  #   coefficient: 0.28871
-
-  #   cpu: 2
-  #   mem_mb: 16384
-  #   time: "30:00"
-
-  # wgs-mica:
-  #   chr: "chr6"
-  #   start: 31399784
-  #   end: 31415315
-  #   seed: 42
-  #   n_replicates: 10
-
-  #   collapse: 0
-  #   templates:
-  #     - HG01363.bam
-  #     - HG01941.bam
-  #     - HG02122.bam
-  #     - HG02127.bam
-  #     - HG02291.bam
-  #     - HG02678.bam
-  #     - HG03593.bam
-  #     - HG03780.bam
-  #     - HG03965.bam
-  #     - NA18547.bam
-
-  #   map_mode: "mean"
-  #   sample_mode: "mean"
-  #   source: "HG002.GRCh38.300x.bam"
-
-  #   coefficient: 0.1458389899
-
-  #   cpu: 2
-  #   mem_mb: 16384
-  #   time: "30:00"
-
-  # wegs-8p5x-mica:
-  #   chr: "chr6"
-  #   start: 31368488
-  #   end: 31383092
-  #   seed: 42
-  #   n_replicates: 10
-
-  #   collapse: 0
-  #   templates:
-  #     - "HG002-WEGS-8P5X-R1.bam"
-
-  #   map_mode: "mean"
-  #   sample_mode: "mean"
-  #   source: "HG002.GRCh38.300x.bam"
-
-  #   coefficient: 0.1866891744
-
-  #   cpu: 2
-  #   mem_mb: 16384
-  #   time: "30:00"
-
-  # wgs-micb:
-  #   chr: "chr6"
-  #   start: 31494918
-  #   end: 31511124
-  #   seed: 42
-  #   n_replicates: 10
-
-  #   collapse: 0
-  #   templates:
-  #     - HG01363.bam
-  #     - HG01941.bam
-  #     - HG02122.bam
-  #     - HG02127.bam
-  #     - HG02291.bam
-  #     - HG02678.bam
-  #     - HG03593.bam
-  #     - HG03780.bam
-  #     - HG03965.bam
-  #     - NA18547.bam
-
-  #   map_mode: "mean"
-  #   sample_mode: "mean"
-  #   source: "HG002.GRCh38.300x.bam"
-
-  #   coefficient: 0.1594700026
-
-  #   cpu: 2
-  #   mem_mb: 16384
-  #   time: "30:00"
-
-  # wegs-8p5x-micb:
-  #   chr: "chr6"
-  #   start: 31462658
-  #   end: 31478901
-  #   seed: 42
-  #   n_replicates: 10
-
-  #   collapse: 0
-  #   templates:
-  #     - "HG002-WEGS-8P5X-R1.bam"
-
-  #   map_mode: "mean"
-  #   sample_mode: "mean"
-  #   source: "HG002.GRCh38.300x.bam"
-
-  #   coefficient: 0.2065010188
-
-  #   cpu: 2
-  #   mem_mb: 16384
-  #   time: "30:00"
-
-  wgs-brca1-min:
-    chr: "chr17"
-    start: 43044295
-    end: 43170245
-    seed: 42
+  wgs-chr21:
+    chr: "chr21"
+    start: 1
+    end: 46709982
     n_replicates: 10
 
     collapse: 0
     templates:
-      - HG01363.bam
-      - HG01941.bam
-      - HG02122.bam
-      - HG02127.bam
-      - HG02291.bam
-      - HG02678.bam
-      - HG03593.bam
-      - HG03780.bam
-      - HG03965.bam
-      - NA18547.bam
+        - HG01363.bam
+        - HG01941.bam
+        - HG02122.bam
+        - HG02127.bam
+        - HG02291.bam
+        - HG02678.bam
+        - HG03593.bam
+        - HG03780.bam
+        - HG03965.bam
+        - NA18547.bam
 
     map_mode: "mean"
-    sample_mode: "min"
+    sample_mode: "mean"
     source: "HG002.GRCh38.300x.bam"
-
-    coefficient: 0.1302768796
 
     cpu: 2
     mem_mb: 16384
     time: "30:00"
 
-  wgs-brca1-mean:
+  wegs-8p5x-chr21:
+    chr: "chr21"
+    start: 1
+    end: 46709982
+    n_replicates: 10
+
+    collapse: 0
+    templates:
+      - "HG002-WEGS-8P5X-GRCh38.bam"
+
+    map_mode: "mean"
+    sample_mode: "mean"
+    source: "HG002.GRCh38.300x.bam"
+
+    cpu: 2
+    mem_mb: 16384
+    time: "30:00"
+
+  wgs-brca1:
     chr: "chr17"
     start: 43044295
     end: 43170245
-    seed: 42
     n_replicates: 10
 
     collapse: 0
@@ -488,17 +93,32 @@ benchmarks:
     sample_mode: "mean"
     source: "HG002.GRCh38.300x.bam"
 
-    coefficient: 0.1302768796
+    cpu: 2
+    mem_mb: 16384
+    time: "30:00"
+
+  wegs-8p5x-brca1:
+    chr: "chr17"
+    start: 43044295
+    end: 43170245
+    n_replicates: 10
+
+    collapse: 0
+    templates:
+      - "HG002-WEGS-8P5X-GRCh38.bam"
+
+    map_mode: "mean"
+    sample_mode: "mean"
+    source: "HG002.GRCh38.300x.bam"
 
     cpu: 2
     mem_mb: 16384
     time: "30:00"
 
-  wgs-brca1-median:
+  wgs-tp53:
     chr: "chr17"
-    start: 43044295
-    end: 43170245
-    seed: 42
+    start: 7661779
+    end: 7687538
     n_replicates: 10
 
     collapse: 0
@@ -515,20 +135,125 @@ benchmarks:
       - NA18547.bam
 
     map_mode: "mean"
-    sample_mode: "median"
+    sample_mode: "mean"
     source: "HG002.GRCh38.300x.bam"
-
-    coefficient: 0.1302768796
 
     cpu: 2
     mem_mb: 16384
     time: "30:00"
 
-  wgs-brca1-max:
+  wegs-8p5x-tp53:
     chr: "chr17"
-    start: 43044295
-    end: 43170245
-    seed: 42
+    start: 7661779
+    end: 7687538
+    n_replicates: 10
+
+    collapse: 0
+    templates:
+      - "HG002-WEGS-8P5X-GRCh38.bam"
+
+    map_mode: "mean"
+    sample_mode: "mean"
+    source: "HG002.GRCh38.300x.bam"
+
+    cpu: 2
+    mem_mb: 16384
+    time: "30:00"
+
+  wgs-hla-a:
+    chr: "chr6"
+    start: 29941260
+    end: 29945884
+    n_replicates: 10
+
+    collapse: 0
+    templates:
+        - HG01363.bam
+        - HG01941.bam
+        - HG02122.bam
+        - HG02127.bam
+        - HG02291.bam
+        - HG02678.bam
+        - HG03593.bam
+        - HG03780.bam
+        - HG03965.bam
+        - NA18547.bam
+
+    map_mode: "mean"
+    sample_mode: "mean"
+    source: "HG002.GRCh38.300x.bam"
+
+    cpu: 2
+    mem_mb: 16384  
+    time: "30:00"
+
+  wegs-8p5x-hla-a:
+    chr: "chr6"
+    start: 29941260
+    end: 29945884
+    n_replicates: 10
+
+    collapse: 0
+    templates:
+      - "HG002-WEGS-8P5X-GRCh38.bam"
+
+    map_mode: "mean"
+    sample_mode: "mean"
+    source: "HG002.GRCh38.300x.bam"
+
+    cpu: 2
+    mem_mb: 16384
+    time: "30:00"
+
+  # wgs-brca1:
+  #   chr: "chr17"
+  #   start: 43044295
+  #   end: 43170245
+  #   n_replicates: 10
+
+  #   collapse: 0
+  #   templates:
+  #     - HG01363.bam
+  #     - HG01941.bam
+  #     - HG02122.bam
+  #     - HG02127.bam
+  #     - HG02291.bam
+  #     - HG02678.bam
+  #     - HG03593.bam
+  #     - HG03780.bam
+  #     - HG03965.bam
+  #     - NA18547.bam
+
+  #   map_mode: "mean"
+  #   sample_mode: "mean"
+  #   source: "HG002.GRCh38.300x.bam"
+
+  #   cpu: 2
+  #   mem_mb: 16384
+  #   time: "30:00"
+
+  # wegs-8p5x-brca1:
+  #   chr: "chr17"
+  #   start: 43044295
+  #   end: 43170245
+  #   n_replicates: 10
+
+  #   collapse: 0
+  #   templates:
+  #     - "HG002-WEGS-8P5X-GRCh38.bam"
+
+  #   map_mode: "mean"
+  #   sample_mode: "mean"
+  #   source: "HG002.GRCh38.300x.bam"
+
+  #   cpu: 2
+  #   mem_mb: 16384
+  #   time: "30:00"
+
+  wgs-tp53:
+    chr: "chr17"
+    start: 7661779
+    end: 7687538
     n_replicates: 10
 
     collapse: 0
@@ -545,11 +270,117 @@ benchmarks:
       - NA18547.bam
 
     map_mode: "mean"
-    sample_mode: "max"
+    sample_mode: "mean"
     source: "HG002.GRCh38.300x.bam"
-
-    coefficient: 0.1302768796
 
     cpu: 2
     mem_mb: 16384
     time: "30:00"
+
+  wegs-8p5x-tp53:
+    chr: "chr17"
+    start: 7661779
+    end: 7687538
+    n_replicates: 10
+
+    collapse: 0
+    templates:
+      - "HG002-WEGS-8P5X-GRCh38.bam"
+
+    map_mode: "mean"
+    sample_mode: "mean"
+    source: "HG002.GRCh38.300x.bam"
+
+    cpu: 2
+    mem_mb: 16384
+    time: "30:00"
+
+  # wgs-mica:
+  #   chr: "chr6"
+  #   start: 31399784
+  #   end: 31415315
+  #   n_replicates: 10
+
+  #   collapse: 0
+  #   templates:
+  #     - HG01363.bam
+  #     - HG01941.bam
+  #     - HG02122.bam
+  #     - HG02127.bam
+  #     - HG02291.bam
+  #     - HG02678.bam
+  #     - HG03593.bam
+  #     - HG03780.bam
+  #     - HG03965.bam
+  #     - NA18547.bam
+
+  #   map_mode: "mean"
+  #   sample_mode: "mean"
+  #   source: "HG002.GRCh38.300x.bam"
+
+  #   cpu: 2
+  #   mem_mb: 16384
+  #   time: "30:00"
+
+  # wegs-8p5x-mica:
+  #   chr: "chr6"
+  #   start: 31368488
+  #   end: 31383092
+  #   n_replicates: 10
+
+  #   collapse: 0
+  #   templates:
+  #     - "HG002-WEGS-8P5X-GRCh38.bam"
+
+  #   map_mode: "mean"
+  #   sample_mode: "mean"
+  #   source: "HG002.GRCh38.300x.bam"
+
+  #   cpu: 2
+  #   mem_mb: 16384
+  #   time: "30:00"
+
+  # wgs-micb:
+  #   chr: "chr6"
+  #   start: 31494918
+  #   end: 31511124
+  #   n_replicates: 10
+
+  #   collapse: 0
+  #   templates:
+  #     - HG01363.bam
+  #     - HG01941.bam
+  #     - HG02122.bam
+  #     - HG02127.bam
+  #     - HG02291.bam
+  #     - HG02678.bam
+  #     - HG03593.bam
+  #     - HG03780.bam
+  #     - HG03965.bam
+  #     - NA18547.bam
+
+  #   map_mode: "mean"
+  #   sample_mode: "mean"
+  #   source: "HG002.GRCh38.300x.bam"
+
+  #   cpu: 2
+  #   mem_mb: 16384
+  #   time: "30:00"
+
+  # wegs-8p5x-micb:
+  #   chr: "chr6"
+  #   start: 31462658
+  #   end: 31478901
+  #   n_replicates: 10
+
+  #   collapse: 0
+  #   templates:
+  #     - "HG002-WEGS-8P5X-GRCh38.bam"
+
+  #   map_mode: "mean"
+  #   sample_mode: "mean"
+  #   source: "HG002.GRCh38.300x.bam"
+
+  #   cpu: 2
+  #   mem_mb: 16384
+  #   time: "30:00"
