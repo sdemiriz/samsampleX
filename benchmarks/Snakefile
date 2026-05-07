@@ -1,10 +1,7 @@
 configfile: "config.yaml"
 
-<<<<<<< HEAD
 import hashlib
-=======
 import json
->>>>>>> 284611eecdaf5bda7043d645d3d6090cabbd71a5
 import os
 import re
 from textwrap import dedent
@@ -144,66 +141,8 @@ SAMSAMPLEX_ROOT = os.path.normpath(os.path.join(SNAKE_DIR, ".."))
 MASTER_SEEDS_JSON = "master_seeds.json"
 
 
-<<<<<<< HEAD
 def get_plot_tool_bams(wildcards):
     r = plot_replicate_index()
-=======
-checkpoint master_seed_manifest:
-    """Shared seeds for all benchmarks (see master_seeds.json). Invalidates when config.yaml changes."""
-    input:
-        cfg="config.yaml",
-    output:
-        json=MASTER_SEEDS_JSON,
-    run:
-        import secrets
-
-        upper = 2**31 - 1
-
-        def draw_seed():
-            return secrets.randbelow(upper) + 1
-
-        R = max(get_config(b, "n_replicates") for b in BENCHMARKS)
-        payload = {
-            "map_seed": draw_seed(),
-            "replicate_seeds": [draw_seed() for _ in range(R)],
-        }
-        with open(output.json, "w") as f:
-            json.dump(payload, f, indent=2)
-
-
-def _load_master_seeds():
-    ck = checkpoints.master_seed_manifest.get()
-    with open(ck.output.json) as f:
-        return json.load(f)
-
-
-def seeds_for_benchmark(wildcards):
-    data = _load_master_seeds()
-    n = get_config(wildcards.benchmark, "n_replicates")
-    rs = data["replicate_seeds"]
-    if n > len(rs):
-        raise ValueError(
-            f"master_seeds.json has {len(rs)} replicate seeds but "
-            f"{wildcards.benchmark!r} requires n_replicates={n}; rerun workflow or regenerate master_seeds.json"
-        )
-    return rs[:n]
-
-
-def get_seeds(wildcards):
-    return seeds_for_benchmark(wildcards)
-
-
-def get_map_seed(wildcards):
-    return _load_master_seeds()["map_seed"]
-
-
-def get_plot_seed(wildcards):
-    return seeds_for_benchmark(wildcards)[0]
-
-
-def get_plot_tool_bams(wildcards):
-    s = get_plot_seed(wildcards)
->>>>>>> 284611eecdaf5bda7043d645d3d6090cabbd71a5
     return [
         f"{wildcards.benchmark}/{t}.rep{r}.bam"
         for t in get_plot_tools(wildcards.benchmark)
@@ -237,7 +176,6 @@ def template_coefficient_input_paths(wildcards):
     return paths
 
 
-<<<<<<< HEAD
 def get_uniform_pairwise_pairstat_paths(benchmark):
     """Ordered tool×tool×replicate pairstats paths; empty if not a uniform benchmark."""
     if not uses_uniform_samsample(benchmark):
@@ -246,16 +184,6 @@ def get_uniform_pairwise_pairstat_paths(benchmark):
     reps = replicate_indices(benchmark)
     return [
         f"{benchmark}/pairstats/{ta}.vs.{tb}.rep{r}.stats"
-=======
-def get_uniform_pairwise_pairstat_paths(wildcards):
-    """Ordered tool×tool×seed pairstats paths; empty if not a uniform benchmark."""
-    if not uses_uniform_samsample(wildcards.benchmark):
-        return []
-    tools = get_comparison_tools(wildcards.benchmark)
-    seeds = get_seeds(wildcards)
-    return [
-        f"{wildcards.benchmark}/pairstats/{ta}.vs.{tb}.seed{s}.stats"
->>>>>>> 284611eecdaf5bda7043d645d3d6090cabbd71a5
         for ta in tools
         for tb in tools
         for r in reps
@@ -508,11 +436,7 @@ rule samsampleX_map:
         region=lambda wc: get_region(wc.benchmark),
         collapse=lambda wc: get_config(wc.benchmark, "collapse"),
         map_mode=lambda wc: get_map_mode(wc.benchmark),
-<<<<<<< HEAD
         map_seed=lambda wc: derive_map_seed(WORKFLOW_ROOT_SEED, wc.benchmark),
-=======
-        map_seed=lambda wc: get_map_seed(wc),
->>>>>>> 284611eecdaf5bda7043d645d3d6090cabbd71a5
     output:
         bed="{benchmark}/samsampleX-template.bed",
     benchmark:
@@ -783,11 +707,7 @@ rule uniform_pairwise_metrics_matrix:
             return data
 
         tools = get_comparison_tools(wildcards.benchmark)
-<<<<<<< HEAD
         reps = replicate_indices(wildcards.benchmark)
-=======
-        seeds = get_seeds(wildcards)
->>>>>>> 284611eecdaf5bda7043d645d3d6090cabbd71a5
         # (tool_a, tool_b) -> list of {mae, wasserstein}
         by_pair = {(ta, tb): [] for ta in tools for tb in tools}
         for ta in tools:
@@ -829,23 +749,16 @@ rule uniform_pairwise_metrics_matrix:
                 out.write("\t".join(row_cells) + "\n")
 
 
-<<<<<<< HEAD
 def get_all_benchmark_files(benchmark, pattern):
     reps = replicate_indices(benchmark)
     return [pattern.format(benchmark=benchmark, rep=r) for r in reps]
 
-=======
->>>>>>> 284611eecdaf5bda7043d645d3d6090cabbd71a5
 rule results:
     input:
         benchmarks=lambda wc: [
             f"{wc.benchmark}/benchmarks/{tool}.rep{rep}.tsv"
             for tool in get_comparison_tools(wc.benchmark)
-<<<<<<< HEAD
             for rep in replicate_indices(wc.benchmark)
-=======
-            for seed in get_seeds(wc)
->>>>>>> 284611eecdaf5bda7043d645d3d6090cabbd71a5
         ]
         + (
             []
@@ -863,11 +776,7 @@ rule results:
             return dict(zip(header, values))
         
         results = []
-<<<<<<< HEAD
         reps = replicate_indices(wildcards.benchmark)
-=======
-        seeds = get_seeds(wildcards)
->>>>>>> 284611eecdaf5bda7043d645d3d6090cabbd71a5
         cmp_tools = get_comparison_tools(wildcards.benchmark)
 
         for tool in cmp_tools:
@@ -964,21 +873,13 @@ rule stats_summary:
             [
                 f"{wc.benchmark}/samsampleX-uniform.vs.{ref_tool}.rep{rep}.stats"
                 for ref_tool in get_non_samsamplex_comparison_tools(wc.benchmark)
-<<<<<<< HEAD
                 for rep in replicate_indices(wc.benchmark)
-=======
-                for seed in get_seeds(wc)
->>>>>>> 284611eecdaf5bda7043d645d3d6090cabbd71a5
             ]
             if uses_uniform_samsample(wc.benchmark)
             else [
                 f"{wc.benchmark}/{tool}.rep{rep}.stats"
                 for tool in get_comparison_tools(wc.benchmark)
-<<<<<<< HEAD
                 for rep in replicate_indices(wc.benchmark)
-=======
-                for seed in get_seeds(wc)
->>>>>>> 284611eecdaf5bda7043d645d3d6090cabbd71a5
             ]
         ),
     output:
@@ -1021,11 +922,7 @@ rule stats_summary:
                             data['wasserstein'] = float(match.group(1))
             return data
         
-<<<<<<< HEAD
         reps = replicate_indices(wildcards.benchmark)
-=======
-        seeds = get_seeds(wildcards)
->>>>>>> 284611eecdaf5bda7043d645d3d6090cabbd71a5
         if uses_uniform_samsample(wildcards.benchmark):
             ref_tools = get_non_samsamplex_comparison_tools(wildcards.benchmark)
             group_keys = [f"samsampleX-vs-{rt}" for rt in ref_tools]
@@ -1102,20 +999,12 @@ rule samtools_depth_summary:
             [
                 f"{wc.benchmark}/{tool}.rep{rep}.bam"
                 for tool in get_comparison_tools(wc.benchmark)
-<<<<<<< HEAD
                 for rep in replicate_indices(wc.benchmark)
-=======
-                for seed in get_seeds(wc)
->>>>>>> 284611eecdaf5bda7043d645d3d6090cabbd71a5
             ]
             + [
                 f"{wc.benchmark}/{tool}.rep{rep}.bam.bai"
                 for tool in get_comparison_tools(wc.benchmark)
-<<<<<<< HEAD
                 for rep in replicate_indices(wc.benchmark)
-=======
-                for seed in get_seeds(wc)
->>>>>>> 284611eecdaf5bda7043d645d3d6090cabbd71a5
             ]
         ),
     output:
@@ -1137,11 +1026,7 @@ rule samtools_depth_summary:
         benchmark = wildcards.benchmark
         region = get_region(benchmark)
         tools = get_comparison_tools(benchmark)
-<<<<<<< HEAD
         reps = replicate_indices(benchmark)
-=======
-        seeds = get_seeds(wildcards)
->>>>>>> 284611eecdaf5bda7043d645d3d6090cabbd71a5
 
         def mean_depth_one_bam(bam_path):
             p = subprocess.Popen(
