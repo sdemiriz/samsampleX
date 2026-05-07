@@ -76,18 +76,6 @@ From: ubuntu:25.10
     ln -s /opt/htslib/lib/libhts.* /usr/local/lib/
     ldconfig
 
-    # cd /opt
-    # git clone https://github.com/sdemiriz/samsampleX.git
-    # cd samsampleX
-    # make HTSDIR=/opt/htslib
-    # make install PREFIX=/opt/samsampleX
-    # ln -s /opt/samsampleX/samsampleX /usr/local/bin/samsampleX
-    # chmod +x samsampleX /usr/local/bin/samsampleX
-    # pwd
-    # ls -lah ..
-    # samsampleX --help
-
-
     python -m venv /opt/venv
     . /opt/venv/bin/activate
     pip install pysam numpy xxhash matplotlib
