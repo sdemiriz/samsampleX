@@ -19,7 +19,7 @@ benchmarks:
   #   n_replicates: 10
 
   #   source: "HG002.GRCh38.300x.bam"
-  #   coefficient: 0.01666666667
+  #   coefficient: 0.0166667
 
   #   cpu: 2
   #   mem_mb: 16384
@@ -121,18 +121,18 @@ benchmarks:
     end: 7687538
     n_replicates: 10
 
-    collapse: 0
-    templates:
-      - HG01363.bam
-      - HG01941.bam
-      - HG02122.bam
-      - HG02127.bam
-      - HG02291.bam
-      - HG02678.bam
-      - HG03593.bam
-      - HG03780.bam
-      - HG03965.bam
-      - NA18547.bam
+  #   collapse: 0
+  #   templates:
+  #     - HG01363.bam
+  #     - HG01941.bam
+  #     - HG02122.bam
+  #     - HG02127.bam
+  #     - HG02291.bam
+  #     - HG02678.bam
+  #     - HG03593.bam
+  #     - HG03780.bam
+  #     - HG03965.bam
+  #     - NA18547.bam
 
     map_mode: "mean"
     sample_mode: "mean"
@@ -256,18 +256,9 @@ benchmarks:
     end: 7687538
     n_replicates: 10
 
-    collapse: 0
-    templates:
-      - HG01363.bam
-      - HG01941.bam
-      - HG02122.bam
-      - HG02127.bam
-      - HG02291.bam
-      - HG02678.bam
-      - HG03593.bam
-      - HG03780.bam
-      - HG03965.bam
-      - NA18547.bam
+  #   map_mode: "mean"
+  #   sample_mode: "mean"
+  #   source: "HG002.GRCh38.300x.bam"
 
     map_mode: "mean"
     sample_mode: "mean"
