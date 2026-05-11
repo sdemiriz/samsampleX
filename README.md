@@ -5,9 +5,7 @@ A Python-based tool for dynamic BAM file downsampling, unlike existing tools tha
 - Reproducable, integer seed-based deterministic downsampling
 - Uniform sampling mode: retain a fixed fraction of reads, feature parity with existing tools.
 - Map depth from multiple BAM files to a single BED template via common aggregation statistics (`min`, `mean`, `median`, `max`, `random`).
-- Calculation of quality metrics:
-    - Mean absolute error (MAE): mean per-base absolute difference in depth between two BAMs over the region.
-    - First-order Wasserstein distance (W1): L1 distance between empirical CDFs of per-base depths.
+- Downsampling accuracy calculation (`stats`): per-window signed depth difference (raw and relative to template mean depth), TSV output, and a stderr summary of the top windows by absolute value for each of those two metrics (signed values shown; row count configurable with `--rows`, default 10).
 - Plotting for visual sampling comparisons, with an option to emit a TSV file of the same data instead.
 
 ## Installation
@@ -143,26 +141,39 @@ samsampleX sample \
 | `--prg-seq FILE` | Path to HLA\*LA `sequences.txt` | `HLA-LA/graphs/PRG_MHC_GRCh38_withIMGT/sequences.txt` |
 
 ### Stats
-Compare depth distributions between two inputs over a given region. Each input can be a BAM file or a BED file (auto-detected by extension). Reports mean absolute error (MAE) and Wasserstein-1 distance.
+Compare depth between a template track and a result track over a region. Each input can be a BAM or BED file (inferred from file extension). Depths are aggregated into non-overlapping windows of `--window` base pairs.
+
+TSV output is one row per window with a header line:
+
+`chrom`, `start`, `end`, `mean_depth_temp`, `depth_diff`, `rel_depth_diff`, `mean_depth_res`
+
+Per window, `depth_diff` is the mean signed depth difference (`result − template`). `rel_depth_diff` is `depth_diff` divided by `mean_depth_temp` when that mean is positive; otherwise it is not a finite value. `mean_depth_temp` and `mean_depth_res` are the mean depths of the template and result in the window.
+
+Standard error prints the command line and, if any window has zero mean template or zero mean result depth, a warning. It then lists up to **`--rows`** windows (default **10**) with the largest **`|depth_diff|`**, and up to **`--rows`** with the largest **`|rel_depth_diff|`**, in each case printing the **signed** value (explicit `+` or `-`). Fewer lines appear when there are not enough windows or not enough finite relative values.
 ```bash
 # BAM vs BAM
 samsampleX stats \
-    --a template.bam \
-    --b sampled.bam \
+    --template template.bam \
+    --result sampled.bam \
     --region chr1:1000-2000
 
-# BED vs BAM (e.g. combined cohort template against sampled output)
+# BED vs BAM (e.g. cohort template against sampled output)
 samsampleX stats \
-    --a template.bed \
-    --b sampled.bam \
-    --region chr1:1000-2000
+    --template template.bed \
+    --result sampled.bam \
+    --region chr1:1000-2000 \
+    --window 100 \
+    --out-tsv per_window.tsv
 ```
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--a FILE` | First input — BAM or BED file (reference) (required) | - |
-| `--b FILE` | Second input — BAM or BED file (comparison) (required) | - |
+| `--template FILE` | Template track — BAM or BED (reference depths) (required) | - |
+| `--result FILE` | Result track — BAM or BED (comparison depths) (required) | - |
 | `--region REGION` | Target region, samtools-style (required) | - |
+| `--window INT` | Window size in bp for non-overlapping aggregation | `100` |
+| `--out-tsv FILE` | Per-window metrics TSV; use `-` for stdout | `-` |
+| `--rows INT` | Top windows per metric to print on stderr (by `|depth_diff|` and `|rel_depth_diff|`) | `10` |
 
 ## Example
 
@@ -247,10 +258,14 @@ pytest -v
    - Keep the read if $f_{read} < ratio_{read}$
 
 ## Metrics
+Windowed statistics from `stats` (each value is a mean over positions inside that window, except `rel_depth_diff`, which scales that window’s mean signed error by the template mean depth):
+
 | Metric | Significance |
 | ------ | ------------ |
-| Mean Absolute Error | Average absolute per-base depth difference between the two BAMs |
-| Wasserstein-1 Distance | L1 distance between empirical CDFs of depth (scales with region length) |
+| `mean_depth_temp` | Mean depth for the template in the window |
+| `depth_diff` | Mean signed depth difference (`result − template`) |
+| `rel_depth_diff` | `depth_diff` / `mean_depth_temp` when `mean_depth_temp > 0` |
+| `mean_depth_res` | Mean depth for the result in the window |
 
 
 ## Benchmarking
