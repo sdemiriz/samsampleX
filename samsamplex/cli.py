@@ -122,12 +122,34 @@ def _add_stats_parser(subparsers: argparse._SubParsersAction) -> None:
         "stats",
         help="Compare depth distributions between two BAM or BED files",
     )
-    p.add_argument("--a", required=True, help="First input file — BAM or BED (reference)")
-    p.add_argument("--b", required=True, help="Second input file — BAM or BED (comparison)")
+    p.add_argument(
+        "--template",
+        required=True,
+        help="Template track — BAM or BED (reference depths)",
+    )
+    p.add_argument(
+        "--result",
+        required=True,
+        help="Result track — BAM or BED (comparison depths)",
+    )
     p.add_argument("--region", required=True, help="Region to compare (samtools-style)")
-
-
-# ── Subcommand handlers ─────────────────────────────────────────────────────
+    p.add_argument(
+        "--window",
+        type=int,
+        default=100,
+        help="Window size in bp for aggregation [default: 100]",
+    )
+    p.add_argument(
+        "--out-tsv",
+        default="-",
+        help="Per-window metrics TSV path, or '-' for stdout [default: -]",
+    )
+    p.add_argument(
+        "--rows",
+        type=int,
+        default=10,
+        help="How many top windows to list per metric on stderr [default: 10]",
+    )
 
 
 def _run_map(args: argparse.Namespace) -> int:
@@ -246,15 +268,26 @@ def _run_mapback(args: argparse.Namespace) -> int:
 
 def _run_stats(args: argparse.Namespace) -> int:
     from .depth import region_parse
-    from .metrics import depth_from_path, metrics_calculate, metrics_print
+    from .metrics import (
+        any_zero_depth_window,
+        depth_from_path,
+        metrics_window_rows,
+        print_stats_stderr,
+        write_stats_tsv,
+    )
 
-    log = lambda msg: print(msg, file=sys.stderr)
+    if args.window < 1:
+        print("Error: --window must be >= 1", file=sys.stderr)
+        return 1
+    if args.rows < 1:
+        print("Error: --rows must be >= 1", file=sys.stderr)
+        return 1
 
     region = region_parse(args.region)
 
     # Resolve region bounds from a BAM input (BED files don't carry contig lengths).
     bam_input = None
-    for path in (args.a, args.b):
+    for path in (args.template, args.result):
         if not path.endswith(".bed"):
             bam_input = path
             break
@@ -266,7 +299,10 @@ def _run_stats(args: argparse.Namespace) -> int:
         with pysam.AlignmentFile(bam_input, "rb") as bam:
             resolved = resolve_contig_name(bam.header, region.contig)
             if resolved is None:
-                log(f"Error: Contig '{region.contig}' not found in {bam_input}")
+                print(
+                    f"Error: Contig '{region.contig}' not found in {bam_input}",
+                    file=sys.stderr,
+                )
                 return 1
             region.contig = resolved
             if region.start < 0:
@@ -275,29 +311,32 @@ def _run_stats(args: argparse.Namespace) -> int:
                 region.end = bam.get_reference_length(resolved)
     else:
         if region.start < 0 or region.end < 0:
-            log("Error: --region must specify explicit start and end when both inputs are BED files")
+            print(
+                "Error: --region must specify explicit start and end when "
+                "both inputs are BED files",
+                file=sys.stderr,
+            )
             return 1
 
-    def _fmt_type(path: str) -> str:
-        return "BED" if path.endswith(".bed") else "BAM"
+    depth_temp = depth_from_path(
+        args.template, region.contig, region.start, region.end
+    )
+    depth_res = depth_from_path(args.result, region.contig, region.start, region.end)
 
-    log(f"Input A ({_fmt_type(args.a)}): {args.a}")
-    log(f"Input B ({_fmt_type(args.b)}): {args.b}")
-    log(f"Region: {region.contig}:{region.start + 1}-{region.end}")
+    rows = metrics_window_rows(depth_temp, depth_res, args.window)
 
-    depth_a = depth_from_path(args.a, region.contig, region.start, region.end)
-    depth_b = depth_from_path(args.b, region.contig, region.start, region.end)
+    if args.out_tsv == "-":
+        write_stats_tsv(sys.stdout, rows)
+    else:
+        with open(args.out_tsv, "w") as fp:
+            write_stats_tsv(fp, rows)
 
-    result = metrics_calculate(depth_a, depth_b)
-
-    log("")
-    log("========== Comparison Metrics ==========")
-    log(f"A (reference):           {args.a}")
-    log(f"B (comparison):          {args.b}")
-    log(f"Region:                  {region.contig}:{region.start + 1}-{region.end}")
-    log(f"Positions compared:      {depth_a.length}")
-    log("-" * 41)
-    metrics_print(result, label_a="A", label_b="B")
+    print_stats_stderr(
+        sys.argv,
+        rows,
+        warn_zero_depth=any_zero_depth_window(rows),
+        stderr_rows=args.rows,
+    )
 
     return 0
 
