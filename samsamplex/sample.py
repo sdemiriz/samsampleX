@@ -219,8 +219,6 @@ def sample_run(
     with pysam.AlignmentFile(source_bam, "rb") as src:
         with pysam.AlignmentFile(out_bam, "wb", header=src.header, threads=threads) as out:
             for read in src.fetch(region.contig, region.start, region.end):
-                if read.is_unmapped:
-                    continue
 
                 total_reads += 1
 
