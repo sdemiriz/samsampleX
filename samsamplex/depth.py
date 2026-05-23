@@ -88,39 +88,37 @@ def depth_from_bam(
     start: int,
     end: int,
 ) -> DepthArray:
-    """Compute per-position depth for a region from an indexed BAM file.
-
-    Uses a simplified read-iteration approach:
-    for each read overlapping the region, increment depth at every covered
-    position (CIGAR-unaware).
-    """
     with pysam.AlignmentFile(bam_path, "rb") as bam:
         resolved = resolve_contig_name(bam.header, contig)
         if resolved is None:
             raise ValueError(f"Contig '{contig}' not found in BAM header")
 
-        tid = bam.get_tid(resolved)
         contig_len = bam.get_reference_length(resolved)
-
         if start < 0:
             start = 0
         if end < 0 or end > contig_len:
             end = contig_len
 
-        depths = np.zeros(end - start, dtype=np.int32)
+    depths = np.zeros(end - start, dtype=np.int32)
 
-        for read in bam.fetch(resolved, start, end):
+    region = f"{resolved}:{start + 1}-{end}"
+    args = [
+        "-a",
+        "-q", "0",
+        "-Q", "0",
+        "-J",
+        "-s",
+        "--excl-flags", "0",
+        "-r", region,
+        bam_path,
+    ]
 
-            r_start = read.reference_start
-            r_end = read.reference_end
-            if r_end is None:
-                continue
+    out = pysam.samtools.depth(*args)
 
-            ov_start = max(r_start, start)
-            ov_end = min(r_end, end)
-            if ov_start >= ov_end:
-                continue
-
-            depths[ov_start - start : ov_end - start] += 1
+    for line in out.splitlines():
+        _, pos, depth = line.split("\t")
+        i = int(pos) - 1 - start
+        if 0 <= i < len(depths):
+            depths[i] = int(depth)
 
     return DepthArray(contig=resolved, start=start, end=end, depths=depths)
