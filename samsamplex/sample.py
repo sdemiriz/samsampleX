@@ -41,6 +41,19 @@ def _compute_ratios(template: DepthArray, source: DepthArray) -> np.ndarray:
     return ratios
 
 
+def _read_ratio_span(read: pysam.AlignedSegment) -> tuple[int, int]:
+    """Return (start, end) for ratio lookup; unmapped reads use a 1 bp span at start."""
+    start = read.reference_start
+    end = read.reference_end
+    if end is not None:
+        return start, end
+    if start is None:
+        raise ValueError(
+            f"Read {read.query_name!r} has no reference coordinates; cannot compute sampling ratio"
+        )
+    return start, start + 1
+
+
 def _get_mean_ratio(
     cumsum: np.ndarray, region_start: int, region_end: int, read_start: int, read_end: int,
 ) -> float:
@@ -218,23 +231,27 @@ def sample_run(
 
     with pysam.AlignmentFile(source_bam, "rb") as src:
         with pysam.AlignmentFile(out_bam, "wb", header=src.header, threads=threads) as out:
-            for read in src.fetch(region.contig, region.start, region.end):
+            try:
+                for read in src.fetch(region.contig, region.start, region.end):
+                    total_reads += 1
 
-                total_reads += 1
+                    hash_frac = _xxh32_fraction(read.query_name, seed)
+                    if uniform_fraction is not None:
+                        read_ratio = uniform_fraction
+                    else:
+                        r_start, r_end = _read_ratio_span(read)
+                        read_ratio = get_ratio(r_start, r_end)
 
-                hash_frac = _xxh32_fraction(read.query_name, seed)
-                if uniform_fraction is not None:
-                    read_ratio = uniform_fraction
-                else:
-                    read_ratio = get_ratio(read.reference_start, read.reference_end)
+                    if hash_frac < read_ratio:
+                        out.write(read)
+                        kept_reads += 1
 
-                if hash_frac < read_ratio:
-                    out.write(read)
-                    kept_reads += 1
-
-                if total_reads % 1_000_000 == 0:
-                    pct = 100.0 * kept_reads / total_reads
-                    log(f"[sample]   Processed {total_reads} reads, kept {kept_reads} ({pct:.1f}%)")
+                    if total_reads % 1_000_000 == 0:
+                        pct = 100.0 * kept_reads / total_reads
+                        log(f"[sample]   Processed {total_reads} reads, kept {kept_reads} ({pct:.1f}%)")
+            except ValueError as exc:
+                log(f"Error: {exc}")
+                return 1
 
     pct = 100.0 * kept_reads / total_reads if total_reads else 0.0
     log(f"[sample] Processed {total_reads} reads, kept {kept_reads} ({pct:.1f}%)")

@@ -11,6 +11,7 @@ from samsamplex.sample import (
     _get_median_ratio,
     _get_min_ratio,
     _get_random_ratio,
+    _read_ratio_span,
     _xxh32_fraction,
 )
 
@@ -197,3 +198,26 @@ class TestGetRandomRatio:
     def test_no_overlap(self):
         ratios = np.array([0.5, 0.5])
         assert _get_random_ratio(ratios, 0, 2, 5, 10, seed=0) == pytest.approx(0.0)
+
+
+# ── _read_ratio_span ─────────────────────────────────────────────────────────
+
+
+class TestReadRatioSpan:
+    @staticmethod
+    def _read(start, end, qname="read1"):
+        return type("Read", (), {
+            "reference_start": start,
+            "reference_end": end,
+            "query_name": qname,
+        })()
+
+    def test_mapped_span_unchanged(self):
+        assert _read_ratio_span(self._read(100, 148)) == (100, 148)
+
+    def test_unmapped_uses_single_coordinate(self):
+        assert _read_ratio_span(self._read(100, None)) == (100, 101)
+
+    def test_missing_coordinates_raises(self):
+        with pytest.raises(ValueError, match="no reference coordinates"):
+            _read_ratio_span(self._read(None, None, qname="bad_read"))
