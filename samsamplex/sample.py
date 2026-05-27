@@ -41,6 +41,16 @@ def _compute_ratios(template: DepthArray, source: DepthArray) -> np.ndarray:
     return ratios
 
 
+def _compute_ratios_from_target(target_depth: float, source: DepthArray) -> np.ndarray:
+    """ratio[i] = min(1.0, target_depth / source[i]), 0 where source is 0."""
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.where(
+            source.depths == 0,
+            0.0,
+            np.minimum(1.0, target_depth / source.depths.astype(np.float64)),
+        )
+
+
 def _read_ratio_span(read: pysam.AlignedSegment) -> tuple[int, int]:
     """Return (start, end) for ratio lookup; unmapped reads use a 1 bp span at start."""
     start = read.reference_start
@@ -118,6 +128,30 @@ def _get_random_ratio(
     return float(sl[idx])
 
 
+def _make_get_ratio(
+    stat: str,
+    ratios: np.ndarray,
+    cumsum: np.ndarray,
+    region_start: int,
+    region_end: int,
+    seed: int,
+):
+    """Return a (read_start, read_end) -> ratio callable for the given stat mode."""
+    if stat == "mean":
+        return lambda rs, re: _get_mean_ratio(cumsum, region_start, region_end, rs, re)
+    if stat == "min":
+        return lambda rs, re: _get_min_ratio(ratios, region_start, region_end, rs, re)
+    if stat == "max":
+        return lambda rs, re: _get_max_ratio(ratios, region_start, region_end, rs, re)
+    if stat == "median":
+        return lambda rs, re: _get_median_ratio(ratios, region_start, region_end, rs, re)
+    if stat == "random":
+        return lambda rs, re: _get_random_ratio(
+            ratios, region_start, region_end, rs, re, seed
+        )
+    return None
+
+
 # ── Main sampling routine ───────────────────────────────────────────────────
 
 
@@ -130,15 +164,16 @@ def sample_run(
     stat: str = "mean",
     seed: int = 42,
     # no_sort: bool = False,
-    uniform_fraction: float | None = None,
+    target_depth: float | None = None,
     threads: int = 2,
 ) -> int:
     """Run the sample subcommand. Returns 0 on success."""
     log = lambda msg: print(msg, file=sys.stderr)
 
     log(f"[sample] Source BAM: {source_bam}")
-    if uniform_fraction is not None:
-        log(f"[sample] Uniform fraction: {uniform_fraction}")
+    if target_depth is not None:
+        log(f"[sample] Target depth: {target_depth}x")
+        log(f"[sample] Stat: {stat}")
     else:
         log(f"[sample] Template BEDs: {len(template_beds)} file(s)")
         for i, b in enumerate(template_beds):
@@ -166,16 +201,23 @@ def sample_run(
 
     log(f"[sample] Parsed region: {region.contig}:{region.start}-{region.end}")
 
-    if uniform_fraction is None:
+    if stat not in DEPTH_MODES:
+        log(
+            f"Error: Unknown stat mode {stat!r} "
+            f"(expected one of: {', '.join(DEPTH_MODES)})"
+        )
+        return 1
+
+    if target_depth is not None:
+        log("[sample] Computing source depth array...")
+        source_depth = depth_from_bam(source_bam, region.contig, region.start, region.end)
+
+        log("[sample] Computing sampling ratios...")
+        ratios = _compute_ratios_from_target(target_depth, source_depth)
+    else:
         if mode not in DEPTH_MODES:
             log(
                 f"Error: Unknown combine mode {mode!r} "
-                f"(expected one of: {', '.join(DEPTH_MODES)})"
-            )
-            return 1
-        if stat not in DEPTH_MODES:
-            log(
-                f"Error: Unknown stat mode {stat!r} "
                 f"(expected one of: {', '.join(DEPTH_MODES)})"
             )
             return 1
@@ -183,7 +225,6 @@ def sample_run(
             log("Error: Template BED(s) required when not using --uniform")
             return 1
 
-        # Load template depth(s)
         log("[sample] Loading template BED file(s)...")
         template_arrays = [
             bed_read_depths(bp, region.contig, region.start, region.end)
@@ -196,33 +237,17 @@ def sample_run(
             log(f"[sample] Combining {len(template_arrays)} templates using '{mode}' mode...")
             template_depth = bed_combine_depths(template_arrays, mode=mode, seed=seed)
 
-        # Compute source depth
         log("[sample] Computing source depth array...")
         source_depth = depth_from_bam(source_bam, region.contig, region.start, region.end)
 
-        # Compute ratios
         log("[sample] Computing sampling ratios...")
         ratios = _compute_ratios(template_depth, source_depth)
 
-        # Precompute cumulative sum (used by mean stat mode, always needed for default)
-        cumsum = np.concatenate(([0.0], np.cumsum(ratios)))
-
-        # Choose ratio-lookup function based on stat mode
-        if stat == "mean":
-            get_ratio = lambda rs, re: _get_mean_ratio(cumsum, region.start, region.end, rs, re)
-        elif stat == "min":
-            get_ratio = lambda rs, re: _get_min_ratio(ratios, region.start, region.end, rs, re)
-        elif stat == "max":
-            get_ratio = lambda rs, re: _get_max_ratio(ratios, region.start, region.end, rs, re)
-        elif stat == "median":
-            get_ratio = lambda rs, re: _get_median_ratio(ratios, region.start, region.end, rs, re)
-        elif stat == "random":
-            get_ratio = lambda rs, re: _get_random_ratio(
-                ratios, region.start, region.end, rs, re, seed
-            )
-        else:
-            log(f"Error: Unknown stat mode '{stat}'")
-            return 1
+    cumsum = np.concatenate(([0.0], np.cumsum(ratios)))
+    get_ratio = _make_get_ratio(stat, ratios, cumsum, region.start, region.end, seed)
+    if get_ratio is None:
+        log(f"Error: Unknown stat mode '{stat}'")
+        return 1
 
     # Sampling loop
     log("[sample] Sampling reads...")
@@ -236,11 +261,8 @@ def sample_run(
                     total_reads += 1
 
                     hash_frac = _xxh32_fraction(read.query_name, seed)
-                    if uniform_fraction is not None:
-                        read_ratio = uniform_fraction
-                    else:
-                        r_start, r_end = _read_ratio_span(read)
-                        read_ratio = get_ratio(r_start, r_end)
+                    r_start, r_end = _read_ratio_span(read)
+                    read_ratio = get_ratio(r_start, r_end)
 
                     if hash_frac < read_ratio:
                         out.write(read)

@@ -51,7 +51,7 @@ samsampleX map \
 | `--seed INT` | Random seed for `--mode random` | `42` |
 
 ### Sampling
-Downsample BAM based on provided BED template, using selected metric if multiple BEDs provided. Alternatively, use `--uniform` for position-independent uniform sampling similar to existing tools.
+Downsample BAM based on provided BED template, using selected metric if multiple BEDs provided. Alternatively, use `--uniform` with a target depth (e.g. 30x) for depth-aware downsampling without a template BED.
 
 **Depth-based sampling (template required):**
 ```bash
@@ -62,21 +62,21 @@ samsampleX sample \
     --out-bam sampled.bam
 ```
 
-**Uniform sampling (no template):**
+**Target-depth sampling (no template):**
 ```bash
 samsampleX sample \
     --source-bam high_depth.bam \
-    --uniform 0.5 \
+    --uniform 30 \
     --region chr1:1000-2000 \
     --out-bam sampled.bam
 ```
-Retains approximately 50% of reads uniformly across the region.
+Downsamples toward approximately 30x coverage using per-position ratios derived from source depth.
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--source-bam FILE` | Input BAM to sample reads from (required) | - |
 | `--template-bed FILE` | Template BED file; required unless `--uniform` is used | - |
-| `--uniform FRACTION` | Uniform sampling: retain fraction of reads. Bypasses template-based downsampling. | - |
+| `--uniform DEPTH` | Target depth in x (e.g. 30). Depth-aware downsampling without a template BED. | - |
 | `--region REGION` | Target region, samtools-style (required) | - |
 | `--out-bam FILE` | Output BAM file to write reads to (required) | - |
 | `--mode MODE` | Combine mode for multiple templates: `min`, `mean`, `median`, `max`, `random` | `random` |
@@ -245,8 +245,8 @@ pytest -v
 5. Write to BED4 format (`chrom`, `start`, `end`, `depth` columns)
 
 ### Sampling
-1. **Uniform mode** (`--uniform FRACTION`): Skip template downsampling. For each read, hash the read name with xxHash32 to get $f_{read} \in [0, 1)$; keep if $f_{read} < FRACTION$. Deterministic and position-independent.
-2. **Depth-based mode**: Load template depths from BED file(s); if multiple templates are provided, combine them per-position using the selected `--mode`
+1. **Target-depth mode** (`--uniform DEPTH`): Compute source depths from BAM. Per-position coefficient: $ratio(i) = \min(1,\; DEPTH \;/\; depth_{source}(i))$. Positions with zero source depth get coefficient 0.0. Then follow steps 5–6 below (including `--stat`).
+2. **Template mode**: Load template depths from BED file(s); if multiple templates are provided, combine them per-position using the selected `--mode`
 3. Compute source depths from BAM
 4. Calculate per-position sampling coefficient: $ratio(i) = \min(1,\; depth_{template}(i) \;/\; depth_{source}(i))$
    - Positions where the template depth meets or exceeds the source depth get coefficient 1.0 (keep all reads)

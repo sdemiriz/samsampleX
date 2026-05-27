@@ -6,6 +6,7 @@ import pytest
 from samsamplex.depth import DepthArray
 from samsamplex.sample import (
     _compute_ratios,
+    _compute_ratios_from_target,
     _get_max_ratio,
     _get_mean_ratio,
     _get_median_ratio,
@@ -75,6 +76,31 @@ class TestComputeRatios:
         t = _make([5, 0, 50])
         s = _make([10, 0, 25])
         ratios = _compute_ratios(t, s)
+        np.testing.assert_array_almost_equal(ratios, [0.5, 0.0, 1.0])
+
+
+# ── _compute_ratios_from_target ──────────────────────────────────────────────
+
+
+class TestComputeRatiosFromTarget:
+    def test_half_source_depth(self):
+        s = _make([60, 60, 60])
+        ratios = _compute_ratios_from_target(30.0, s)
+        np.testing.assert_array_almost_equal(ratios, [0.5, 0.5, 0.5])
+
+    def test_target_higher_capped(self):
+        s = _make([10, 20, 30])
+        ratios = _compute_ratios_from_target(30.0, s)
+        np.testing.assert_array_almost_equal(ratios, [1.0, 1.0, 1.0])
+
+    def test_zero_source(self):
+        s = _make([0, 0, 0])
+        ratios = _compute_ratios_from_target(30.0, s)
+        np.testing.assert_array_almost_equal(ratios, [0.0, 0.0, 0.0])
+
+    def test_mixed(self):
+        s = _make([60, 0, 15])
+        ratios = _compute_ratios_from_target(30.0, s)
         np.testing.assert_array_almost_equal(ratios, [0.5, 0.0, 1.0])
 
 

@@ -53,8 +53,8 @@ def _add_sample_parser(subparsers: argparse._SubParsersAction) -> None:
         "--uniform",
         type=float,
         default=None,
-        metavar="FRACTION",
-        help="Uniform sampling: retain fraction of reads by hash (0-1). Bypasses template/depth logic.",
+        metavar="DEPTH",
+        help="Target depth in x (e.g. 30): depth-aware downsampling without a template BED.",
     )
     p.add_argument("--region", required=True, help="Target region (samtools-style)")
     p.add_argument("--out-bam", required=True, help="Output BAM file")
@@ -221,8 +221,8 @@ def _run_sample(args: argparse.Namespace) -> int:
         return 1
 
     if args.uniform is not None:
-        if args.uniform <= 0 or args.uniform > 1:
-            log(f"Error: --uniform must be in (0, 1], got {args.uniform}")
+        if args.uniform <= 0:
+            log(f"Error: --uniform must be > 0, got {args.uniform}")
             return 1
 
     return sample_run(
@@ -234,7 +234,7 @@ def _run_sample(args: argparse.Namespace) -> int:
         stat=args.stat,
         seed=args.seed,
         # no_sort=args.no_sort,
-        uniform_fraction=args.uniform,
+        target_depth=args.uniform,
         threads=args.threads,
     )
 
