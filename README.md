@@ -3,7 +3,7 @@ A Python-based tool for dynamic BAM file downsampling, unlike existing tools tha
 
 ## Features:
 - Reproducable, integer seed-based deterministic downsampling
-- Uniform sampling mode: retain a fixed fraction of reads, feature parity with existing tools.
+- Uniform sampling mode: downsample to generate an even depth distribution with a depth target.
 - Map depth from multiple BAM files to a single BED template via common aggregation statistics (`min`, `mean`, `median`, `max`, `random`).
 - Downsampling accuracy calculation (`stats`): per-window signed depth difference (raw and relative to template mean depth), TSV output, and a stderr summary of the top windows by absolute value for each of those two metrics (signed values shown; row count configurable with `--rows`, default 10).
 - Plotting for visual sampling comparisons, with an option to emit a TSV file of the same data instead.
@@ -51,7 +51,7 @@ samsampleX map \
 | `--seed INT` | Random seed for `--mode random` | `42` |
 
 ### Sampling
-Downsample BAM based on provided BED template, using selected metric if multiple BEDs provided. Alternatively, use `--uniform` with a target depth (e.g. 30x) for depth-aware downsampling without a template BED.
+Downsample BAM based on provided BED template, using selected metric if multiple BEDs provided. Alternatively, use `--uniform` with a target depth (e.g. 30) for even-depth downsampling without a template BED.
 
 **Depth-based sampling (template required):**
 ```bash
@@ -88,7 +88,7 @@ Compare depth of coverage between source, template, and output BAM files. Output
 
 Green is source, orange is template and blue is output depth.
 
-TSV contains one column for `position`, and three for respective depths of source, template and output.
+TSV output contains one column for `position`, and three for respective depths of source, template and output.
 ```bash
 # Generate PNG plot
 samsampleX plot \
@@ -110,7 +110,7 @@ samsampleX plot \
 | `--out-tsv FILE` | Output TSV data (mutually exclusive with --out-png) | - |
 
 ### Mapback
-**If you do not use HLA\*LA and its specific read processing method, feel free to ignore this section.**
+**If you do not use HLA\*LA and its specific read processing method, fignore this section.**
 
 Remap HLA\*LA PRG-mapped reads back to canonical chr6 coordinates. This is a preprocessing step for BAM files produced by HLA\*LA, which maps reads to a pangenome reference graph (PRG) with synthetic contig names (`PRG_1`, `PRG_2`, ...). The mapback subcommand translates these back to chr6 positions using the HLA\*LA `sequences.txt` file and known HLA gene / alt contig boundaries.
 
@@ -149,7 +149,7 @@ TSV output is one row per window with a header line:
 
 Per window, `depth_diff` is the mean signed depth difference (`result − template`). `rel_depth_diff` is `depth_diff` divided by `mean_depth_temp` when that mean is positive; otherwise it is not a finite value. `mean_depth_temp` and `mean_depth_res` are the mean depths of the template and result in the window.
 
-Standard error prints the command line and, if any window has zero mean template or zero mean result depth, a warning. It then lists up to **`--rows`** windows (default **10**) with the largest **`|depth_diff|`**, and up to **`--rows`** with the largest **`|rel_depth_diff|`**, in each case printing the **signed** value (explicit `+` or `-`). Fewer lines appear when there are not enough windows or not enough finite relative values.
+Standard error prints the command line and, if any window has zero mean template or zero mean result depth, a warning. It then lists up to `--rows` windows (default 10) with the largest `|depth_diff|`, and up to `--rows` with the largest `|rel_depth_diff|`, in each case printing the signed value (explicit `+` or `-`). Fewer lines appear when there are not enough windows or not enough finite relative values.
 ```bash
 # BAM vs BAM
 samsampleX stats \
@@ -269,34 +269,70 @@ Windowed statistics from `stats` (each value is a mean over positions inside tha
 
 
 ## Benchmarking
-Benchmarking is done by a `snakemake` workflow in the `benchmarks` directory, and thus `snakemake` should be installed beforehand (for HPC systems, also install `snakemake-executor-plugin-slurm` or other plugin compatible with your system type). 
+Benchmarking is done by a `snakemake` workflow in the `benchmarks` directory, and thus `snakemake` should be installed beforehand (for HPC systems, also install `snakemake-executor-plugin-slurm` or other plugin compatible with your HPC executor type). 
 
 An `Apptainer` container definition `bench.def` that contains installs for `GATK`, `samtools`, `sambamba` and `samsampleX` is included. Build this container using `apptainer build bench.sif bench.def` before running the workflow.
 
 Configure the benchmarking parameters in `config.yaml` in the same directory: copy and rename an existing chunk with all parameters and populate the values. All input files are expected to be found in the same directory as `config.yaml`, BAM files should be indexed using `samtools index`.
 
+Download the `source` alignment from [here](https://ftp.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/AshkenazimTrio/
+HG002_NA24385_son/NIST_HiSeq_HG002_Homogeneity-10953946/
+NHGRI_Illumina300X_AJtrio_novoalign_bams/HG002.GRCh38.300x.bam) and the `templates` from [here](https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000G_2504_high_coverage/1000G_2504_high_coverage.sequence.index). The `templates` in this example config should go in a directory called `template-bams` on the same level as the Snakefile.
+
+The benchmarking is pattern dependent base on the name of each setup. If a setup starts with `templated`, the specification of at least one template is required. Otherwise, if a setup starts with `uniform`, a `target_depth` value needs to be supplied. Examples for this configuration are below.
+
 ```{yaml}
 # config.yaml
-benchmarks:             # all chunks should be children of this header
-  wgs-chr21:            # arbitrary name for benchmarking instance, parameters will be children
-    chr: "chr21"        # specify contig
-    start: 1            # region start coordinate
-    end: 46709982       # region end coordinate
-    seed: 42            # random seed (base)
-    n_replicates: 1     # replicate count, will affect seed 
-                        # (e.g. seed=42, n=3 will use seeds 43, 44, 45)
-    collapse: 0         # define smoothing during mapping step
-    templates:          # specify files to use as templates in sampling
-      - "template.bam"  # all files must be in the benchmarks directory
+parameters:
+  seed: 42
+  source: "HG002.GRCh38.300x.bam"
+  n_replicates: 10
+  collapse: 0
 
-    mode: "mean"        # how to determine per-position template depths from multiple template files
-    source: "source.bam" # specify file to downsample
+  cpus_per_task: 2
+  mem_mb: 16384
+  runtime: 30
 
-    coefficient: 0.1    # coefficient provided to GATK, samtools, sambamba
+  tools:
+    - gatk-constant-memory
+    - gatk-high-accuracy
+    - gatk-chained
+    - samtools
+    - sambamba
+    - samsampleX
 
-    cpu: 2              # specify hardware resource (used by all steps)
-    mem_mb: 16384
-    time: "10:00"
+benchmarks:
+
+# HLA-A
+  templated-wgs-hla-a:
+    region: "chr6:29941260-29945884"
+    templates:
+        - template-bams/HG01363.bam
+        - template-bams/HG01941.bam
+        - template-bams/HG02122.bam
+        - template-bams/HG02127.bam
+        - template-bams/HG02291.bam
+        - template-bams/HG02678.bam
+        - template-bams/HG03593.bam
+        - template-bams/HG03780.bam
+        - template-bams/HG03965.bam
+        - template-bams/NA18547.bam
+
+
+  uniform-wgs-hla-a:
+    region: "chr6:29941260-29945884"
+    target_depth: 30
+    
+# TP53
+  templated-wegs-tp53:
+    region: "chr17:7758460-7784220"
+    templates:
+      - template-bams/HG002-WEGS-8P5X-R1.bam
+
+# CHR21
+  uniform-wgs-chr21-30x:
+    region: "chr21:1-46709982"
+    target_depth: 30
 ```
 
 When executing the workflow, navigate to the `benchmarks` directory and make sure to use the following arguments:
@@ -304,7 +340,7 @@ When executing the workflow, navigate to the `benchmarks` directory and make sur
 snakemake -p --use-apptainer --apptainer-args '--bind $(pwd)'
 ```
 
-A directory for all intermediate files will be created for each chunk defined in `config.yaml` and the final benchmark results will be made available in the `benchmarks` directory as `benchmark-{chunk_name}.tsv`.
+A directory for all intermediate files will be created for each chunk defined in `config.yaml` and the final benchmark results will be made available in each `benchmark` directory as `summary.tsv`.
 
 ## Development 
 

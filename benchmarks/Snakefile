@@ -1,371 +1,294 @@
 configfile: "config.yaml"
 
-import hashlib
-import json
-import os
 import re
-from textwrap import dedent
 
-BENCHMARKS = list(config["benchmarks"].keys())
+rep = range(1, config["parameters"]["n_replicates"] + 1)
 
-# Significant figures for aggregated benchmark TSV numeric columns (see params.sigfigs on summary rules).
-BENCHMARK_OUTPUT_SIGFIGS = 3
+cpus_per_task = config["parameters"]["cpus_per_task"]
+mem_mb = config["parameters"]["mem_mb"]
+runtime = config["parameters"]["runtime"]
 
-# Single preset for the whole benchmark workflow: every subsample RNG is derived from this value so runs are
-# reproducible without a seed manifest. Change this to invalidate/compare separate experiments.
-WORKFLOW_ROOT_SEED = 42
-_U31_MAX = 2**31 - 1
+coding_sequence_annotations = "exons_38.bed"
 
 
-def derive_u31(root: int, benchmark: str, tool: str, rep: int) -> int:
-    """Deterministic 31-bit subsample seed for (benchmark, tool, replicate index)."""
-    msg = f"{root}:{benchmark}:{tool}:{rep}".encode()
-    digest = hashlib.sha256(msg).digest()
-    return 1 + int.from_bytes(digest[:4], "big") % _U31_MAX
+def parse_region(region_str):
+    """Parse samtools-style region; return (contig, 0-based start, 0-based exclusive end)."""
+    m = re.match(r"^([^:]+)(?::(\d+)(?:-(\d+))?)?$", region_str)
+    if not m:
+        raise ValueError(f"Invalid region format: {region_str}")
+    contig = m.group(1)
+    start = int(m.group(2)) - 1 if m.group(2) else -1
+    end = int(m.group(3)) if m.group(3) else -1
+    return contig, start, end
 
 
-def derive_map_seed(root: int, benchmark: str) -> int:
-    """RNG seed for samsampleX map (one value per benchmark)."""
-    msg = f"{root}:{benchmark}:samsampleX-map:0".encode()
-    digest = hashlib.sha256(msg).digest()
-    return 1 + int.from_bytes(digest[:4], "big") % _U31_MAX
-
-
-def replicate_indices(benchmark: str) -> list[int]:
-    """Replicate indices 1 .. n_replicates (paths use ``rep`` wildcards; RNG per tool is derive_u31(...))."""
-    n = get_config(benchmark, "n_replicates")
-    return list(range(1, n + 1))
-
-
-def plot_replicate_index() -> int:
-    """Which replicate index to pass to plot.py for selecting tool BAMs (first replicate)."""
-    return 1
-
-# Subset of tool names used as {tool} wildcard in index_output_bam / compare_stats.
-TOOL_PATTERN = (
-    "gatk-high-accuracy|gatk-constant-memory|gatk-chained|"
-    "samtools|sambamba|samsampleX-sample|samsampleX-uniform"
-)
-
-# Non-samsampleX tools: pairwise stats vs samsampleX-uniform on uniform benchmarks only.
-REF_TOOL_PATTERN = "gatk-high-accuracy|gatk-constant-memory|gatk-chained|samtools|sambamba"
-
-
-def uses_uniform_samsample(benchmark):
-    """Benchmarks with no template BAMs use samsampleX --uniform instead of map+sample."""
-    return "templates" not in config["benchmarks"][benchmark]
-
-
-def get_comparison_tools(benchmark):
-    tools = [
-        "gatk-high-accuracy",
-        "gatk-constant-memory",
-        "gatk-chained",
-        "samtools",
-        "sambamba",
-    ]
-    tools.append(
-        "samsampleX-uniform" if uses_uniform_samsample(benchmark) else "samsampleX-sample"
-    )
-    return tools
-
-
-def get_non_samsamplex_comparison_tools(_benchmark):
-    """GATK / samtools / sambamba names used for uniform pairwise stats (_benchmark reserved for future per-benchmark lists)."""
-    return [
-        "gatk-high-accuracy",
-        "gatk-constant-memory",
-        "gatk-chained",
-        "samtools",
-        "sambamba",
-    ]
-
-
-def get_plot_tools(benchmark):
-    tools = [
-        "gatk-constant-memory",
-        "samtools",
-        "sambamba",
-    ]
-    tools.append(
-        "samsampleX-uniform" if uses_uniform_samsample(benchmark) else "samsampleX-sample"
-    )
-    return tools
-
-
-def get_stats_reference(benchmark):
-    """Reference input for samsampleX stats: source BAM for uniform; combined template BED otherwise."""
-    if uses_uniform_samsample(benchmark):
-        return f"{benchmark}/source.bam"
-    return f"{benchmark}/samsampleX-template.bed"
-
-
-def get_config(benchmark, key):
-    return config["benchmarks"][benchmark][key]
-
-
-def get_map_mode(benchmark):
-    return get_config(benchmark, "map_mode")
-
-
-def get_sample_mode(benchmark):
-    return get_config(benchmark, "sample_mode")
-
-
-def get_region(benchmark):
-    cfg = config["benchmarks"][benchmark]
-    return f"{cfg['chr']}:{cfg['start']}-{cfg['end']}"
-
-def get_templates(benchmark):
-    return config["benchmarks"][benchmark]["templates"]
-
-
-def format_float_sigfigs(x, sigfigs: int) -> str:
-    """Format numeric values for summary TSVs using *sigfigs* significant digits (.ng)."""
-    if isinstance(x, bool):
-        return str(x)
-    if isinstance(x, (int, float)):
-        xf = float(x)
-        if xf != xf:  # NaN
-            return "NA"
-        n = int(sigfigs)
-        if n <= 0:
-            return repr(xf)
-        return format(xf, f".{n}g")
-    return str(x)
-
-
-SNAKE_DIR = os.path.dirname(workflow.snakefile)
-SAMSAMPLEX_ROOT = os.path.normpath(os.path.join(SNAKE_DIR, ".."))
-# Relative to Snakemake invocation cwd; use `cd benchmarks` or `--directory benchmarks`.
-MASTER_SEEDS_JSON = "master_seeds.json"
-
-
-def get_plot_tool_bams(wildcards):
-    r = plot_replicate_index()
-    return [
-        f"{wildcards.benchmark}/{t}.rep{r}.bam"
-        for t in get_plot_tools(wildcards.benchmark)
-    ]
-
-
-UNIFORM_BENCHMARKS = [b for b in BENCHMARKS if uses_uniform_samsample(b)]
-TEMPLATE_BENCHMARKS = [b for b in BENCHMARKS if not uses_uniform_samsample(b)]
-
-
-def _benchmark_regex(names):
-    """Regex matching exactly one of *names* (for disjoint wildcard_constraints)."""
-    if not names:
-        return "__no_matching_benchmark__"
-    return "(" + "|".join(re.escape(n) for n in names) + ")"
-
-
-TEMPLATE_BENCHMARK_REGEX = _benchmark_regex(TEMPLATE_BENCHMARKS)
-UNIFORM_BENCHMARK_REGEX = _benchmark_regex(UNIFORM_BENCHMARKS)
-
-
-def template_coefficient_input_paths(wildcards):
-    """Each template .bam and .bai, then config source .bam and .bai (for samtools -c on region)."""
-    b = wildcards.benchmark
-    paths = []
-    for t in get_templates(b):
-        paths.append(t)
-        paths.append(t + ".bai")
-    s = get_config(b, "source")
-    paths.extend([s, s + ".bai"])
-    return paths
-
-
-def get_uniform_pairwise_pairstat_paths(benchmark):
-    """Ordered tool×tool×replicate pairstats paths; empty if not a uniform benchmark."""
-    if not uses_uniform_samsample(benchmark):
+def load_coding_sequences_in_region(bed_path, contig, region_start, region_end):
+    """Return BED3 intervals fully contained in [region_start, region_end)."""
+    if region_start < 0 or region_end < 0:
         return []
-    tools = get_comparison_tools(benchmark)
-    reps = replicate_indices(benchmark)
-    return [
-        f"{benchmark}/pairstats/{ta}.vs.{tb}.rep{r}.stats"
-        for ta in tools
-        for tb in tools
-        for r in reps
-    ]
+
+    intervals = []
+    with open(bed_path) as fp:
+        for line in fp:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split("\t")
+            if len(parts) < 3 or parts[0] != contig:
+                continue
+            es0 = int(parts[1])
+            ee0 = int(parts[2])
+            if es0 >= region_end:
+                break
+            if es0 >= region_start and ee0 <= region_end:
+                intervals.append((es0, ee0))
+
+    intervals.sort(key=lambda t: (t[0], t[1]))
+    return intervals
+
+
+def add_coding_sequence_track(ax, region_str, bed_path):
+    """Draw coding-sequence rectangles on a horizontal line below the depth curves."""
+    from matplotlib.patches import Rectangle
+
+    contig, rs, re_0 = parse_region(region_str)
+    if rs < 0 or re_0 <= rs:
+        return
+
+    sequences = load_coding_sequences_in_region(bed_path, contig, rs, re_0)
+    if not sequences:
+        return
+
+    ax.spines["bottom"].set_zorder(2)
+    ax.set_xlim(rs + 1, re_0)
+
+    ymin_data, ymax = ax.get_ylim()
+    pad = max((ymax - ymin_data) * 0.08, 1e-12)
+    ax.set_ylim(ymin_data - pad, ymax)
+
+    y_mid = ymin_data - pad / 2
+    chunk_h = min(pad * 0.42, pad * 0.95)
+    y_rect_bottom = y_mid - chunk_h / 2
+
+    x_lo, x_hi = ax.get_xlim()
+    ax.plot(
+        [x_lo, x_hi],
+        [y_mid, y_mid],
+        color="black",
+        linewidth=0.8,
+        solid_capstyle="round",
+        zorder=3,
+    )
+
+    for es0, ee0 in sequences:
+        patch = Rectangle(
+            (es0 + 1, y_rect_bottom),
+            ee0 - es0,
+            chunk_h,
+            facecolor="black",
+            edgecolor="black",
+            linewidth=0.2,
+            zorder=3,
+        )
+        ax.add_patch(patch)
 
 
 rule all:
     input:
-        expand("benchmark-{benchmark}.tsv", benchmark=BENCHMARKS),
-        expand("{benchmark}/{benchmark}-comparison.png", benchmark=BENCHMARKS),
-        expand("{benchmark}/stats_pairwise_matrix.tsv", benchmark=UNIFORM_BENCHMARKS),
+        expand("{benchmark}/summary.tsv", benchmark=config["benchmarks"].keys()),
+        expand("{benchmark}/downsampling-results-plot.png", benchmark=config["benchmarks"].keys()),
+        expand("{benchmark}/templates-plot.png", benchmark=[k for k in config["benchmarks"].keys() if k.startswith("templated")]),
 
-rule preprocess_source:
+rule index_bam:
     input:
-        bam=lambda wc: get_config(wc.benchmark, "source"),
+        bam="{filename}",
     output:
-        bam="{benchmark}/source.bam",
-        index="{benchmark}/source.bam.bai",
-    params:
-        region=lambda wc: get_region(wc.benchmark),
-    resources:
-        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
-        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
-        time=lambda wc: get_config(wc.benchmark, "time"),
+        index="{filename}.bai",
     container:
-        "bench.sif"
+        "bench.sif",
     shell:
         """
-        samtools view {input.bam} {params.region} -b -o {output.bam} && \
+        samtools index {input.bam}
+        """
+
+rule get_coefficient_templated:
+    input:
+        templates=lambda wc: config["benchmarks"][wc.benchmark]["templates"],
+        source=lambda wc: config["parameters"]["source"],
+    params:
+        region=lambda wc: config["benchmarks"][wc.benchmark]["region"],
+    wildcard_constraints:
+        benchmark="^templated.*",
+    output:
+        coefficient="{benchmark}/coefficient.txt",
+    run:
+        import pysam
+        import numpy as np
+
+        def read_count(bam, region):
+            chrom, rest = region.split(":", 1)
+            with pysam.AlignmentFile(bam) as bf:
+                names = set(bf.references)
+            candidates = [chrom, chrom.removeprefix("chr"), f"chr{chrom}"]
+            for name in candidates:
+                if name in names:
+                    return int(pysam.samtools.view("-c", bam, f"{name}:{rest}").strip())
+            raise ValueError(f"No matching contig for {region} in {bam}; have {sorted(names)[:5]}...")
+
+        mean_template = float(np.mean([read_count(t, params.region) for t in input.templates]))
+        source_count = read_count(input.source, params.region)
+        ratio = mean_template / source_count
+        with open(output.coefficient, "w") as f:
+            f.write(f"{ratio}\n")
+
+rule get_coefficient_uniform:
+    input:
+        source=lambda wc: config["parameters"]["source"],
+    params:
+        region=lambda wc: config["benchmarks"][wc.benchmark]["region"],
+        target_depth=lambda wc: config["benchmarks"][wc.benchmark]["target_depth"],
+    wildcard_constraints:
+        benchmark="^uniform.*",
+    output:
+        coefficient="{benchmark}/coefficient.txt",
+    run:
+        import io
+        import pysam
+        import pandas as pd
+
+        # Get number of reads in source and average coverage in the region
+        # Calculate how many reads need to be retained to get target coverage
+
+        depths = pysam.samtools.depth(input.source, "-r", params.region, "-H", "-q", "0", "-Q", "0")
+        source_average_depth = float(
+            pd.read_csv(io.StringIO(depths), sep="\t", usecols=[2]).iloc[:, 0].mean()
+        )
+        ratio = params.target_depth / source_average_depth
+        with open(output.coefficient, "w") as f:
+            f.write(f"{ratio}\n")
+
+rule get_source:
+    input:
+        bam=lambda wc: config["parameters"]["source"],
+    params:
+        region=lambda wc: config["benchmarks"][wc.benchmark]["region"],
+    output:
+        bam="{benchmark}/source.bam",
+    container:
+        "bench.sif",
+    resources:
+        cpus_per_task=cpus_per_task,
+        mem_mb=mem_mb,
+        runtime=runtime,
+    shell:
+        """
+        samtools view {input.bam} {params.region} -b -o {output.bam} &&
         samtools index {output.bam}
         """
 
-# Coefficient: template benchmarks = mean(samtools view -c per template) / samtools view -c source
-# (same region as get_region). Uniform benchmarks still set coefficient in config.yaml.
-rule coefficient_from_templates:
+rule get_template:
     input:
-        lambda wildcards: template_coefficient_input_paths(wildcards),
-    output:
-        coefficient="{benchmark}/coefficient.txt",
+        bams=lambda wc: config["benchmarks"][wc.benchmark]["templates"],
     params:
-        template_bams=lambda wc: " ".join(get_templates(wc.benchmark)),
-        source=lambda wc: get_config(wc.benchmark, "source"),
-        region=lambda wc: get_region(wc.benchmark),
+        region=lambda wc: config["benchmarks"][wc.benchmark]["region"],
+        collapse=lambda wc: config["parameters"]["collapse"],
     wildcard_constraints:
-        benchmark=TEMPLATE_BENCHMARK_REGEX,
-    resources:
-        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
-        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
-        time=lambda wc: get_config(wc.benchmark, "time"),
+        benchmark="^templated.*",
+    output:
+        bed="{benchmark}/template.bed",
     container:
-        "bench.sif"
-    shell:
-        dedent(
-            """
-            set -euo pipefail
-            region='{params.region}'
-            sum=0
-            n=0
-            for b in {params.template_bams}; do
-                c=$(samtools view -c "$b" "$region")
-                sum=$((sum + c))
-                n=$((n + 1))
-            done
-            if [ "$n" -eq 0 ]; then
-                echo "coefficient_from_templates: no template BAMs" >&2
-                exit 1
-            fi
-            src=$(samtools view -c "{params.source}" "$region")
-            if [ "$src" -eq 0 ]; then
-                echo "coefficient_from_templates: source read count is 0" >&2
-                exit 1
-            fi
-            awk -v s="$sum" -v n="$n" -v src="$src" 'BEGIN {{ printf "%.17g\\n", (s / n) / src }}' > {output.coefficient}
-            """
-        ).strip()
-        + "\n"
-
-
-rule coefficient_from_config_uniform:
-    output:
-        coefficient="{benchmark}/coefficient.txt",
-    params:
-        coefficient=lambda wc: get_config(wc.benchmark, "coefficient"),
-    wildcard_constraints:
-        benchmark=UNIFORM_BENCHMARK_REGEX,
+        "bench.sif",
     resources:
-        cpus=1,
-        mem_mb=256,
-        time="0:05:00",
+        cpus_per_task=cpus_per_task,
+        mem_mb=mem_mb,
+        runtime=runtime,
     shell:
-        """printf '%s' '{params.coefficient}' > {output.coefficient}"""
+        """
+        samsampleX map \
+        --template-bam {input.bams} \
+        --region {params.region} \
+        --out-bed {output.bed} \
+        --collapse {params.collapse} \
+        --seed 42
+        """
 
-
-rule GATK_HighAccuracy:
+rule gatk_constant_memory:
     input:
         bam="{benchmark}/source.bam",
         index="{benchmark}/source.bam.bai",
         coefficient="{benchmark}/coefficient.txt",
     output:
-        bam="{benchmark}/gatk-high-accuracy.rep{rep}.bam",
+        bam="{benchmark}/downsampled-bams/gatk-constant-memory-rep{rep}.bam",
     benchmark:
-        "{benchmark}/benchmarks/gatk-high-accuracy.rep{rep}.tsv"
+        "{benchmark}/resource-benchmarks/gatk-constant-memory-rep{rep}.tsv"
     params:
-        rng_seed=lambda wc: derive_u31(
-            WORKFLOW_ROOT_SEED, wc.benchmark, "gatk-high-accuracy", int(wc.rep)
-        ),
-    wildcard_constraints:
-        rep=r"\d+",
-    resources:
-        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
-        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
-        time=lambda wc: get_config(wc.benchmark, "time"),
+        coefficient=lambda wc, input: float(open(input.coefficient).read().strip()),
     container:
-        "bench.sif"
+        "bench.sif",
+    resources:
+        cpus_per_task=cpus_per_task,
+        mem_mb=mem_mb,
+        runtime=runtime,
     shell:
         """
-        gatk --java-options "-Xmx{resources.mem_mb}m" DownsampleSam \
-        -S HighAccuracy \
-        -P "$(cat {input.coefficient})" \
-        -R {params.rng_seed} \
-        -I {input.bam} \
-        -O {output.bam}
-        """
-
-rule GATK_ConstantMemory:
-    input:
-        bam="{benchmark}/source.bam",
-        index="{benchmark}/source.bam.bai",
-        coefficient="{benchmark}/coefficient.txt",
-    output:
-        bam="{benchmark}/gatk-constant-memory.rep{rep}.bam",
-    benchmark:
-        "{benchmark}/benchmarks/gatk-constant-memory.rep{rep}.tsv"
-    params:
-        rng_seed=lambda wc: derive_u31(
-            WORKFLOW_ROOT_SEED, wc.benchmark, "gatk-constant-memory", int(wc.rep)
-        ),
-    wildcard_constraints:
-        rep=r"\d+",
-    resources:
-        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
-        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
-        time=lambda wc: get_config(wc.benchmark, "time"),
-    container:
-        "bench.sif"
-    shell:
-        """
-        gatk --java-options "-Xmx{resources.mem_mb}m" DownsampleSam \
+        gatk --java-options "-Xmx8G" DownsampleSam \
         -S ConstantMemory \
-        -P "$(cat {input.coefficient})" \
-        -R {params.rng_seed} \
+        -P {params.coefficient} \
+        -R null \
         -I {input.bam} \
         -O {output.bam}
         """
 
-rule GATK_Chained:
+rule gatk_high_accuracy:
     input:
         bam="{benchmark}/source.bam",
         index="{benchmark}/source.bam.bai",
         coefficient="{benchmark}/coefficient.txt",
     output:
-        bam="{benchmark}/gatk-chained.rep{rep}.bam",
+        bam="{benchmark}/downsampled-bams/gatk-high-accuracy-rep{rep}.bam",
     benchmark:
-        "{benchmark}/benchmarks/gatk-chained.rep{rep}.tsv"
+        "{benchmark}/resource-benchmarks/gatk-high-accuracy-rep{rep}.tsv"
     params:
-        rng_seed=lambda wc: derive_u31(
-            WORKFLOW_ROOT_SEED, wc.benchmark, "gatk-chained", int(wc.rep)
-        ),
-    wildcard_constraints:
-        rep=r"\d+",
-    resources:
-        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
-        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
-        time=lambda wc: get_config(wc.benchmark, "time"),
+        coefficient=lambda wc, input: float(open(input.coefficient).read().strip()),
     container:
-        "bench.sif"
+        "bench.sif",
+    resources:
+        cpus_per_task=cpus_per_task,
+        mem_mb=mem_mb,
+        runtime=runtime,
     shell:
         """
-        gatk --java-options "-Xmx{resources.mem_mb}m" DownsampleSam \
+        gatk --java-options "-Xmx8G" DownsampleSam \
+        -S HighAccuracy \
+        -P {params.coefficient} \
+        -R null \
+        -I {input.bam} \
+        -O {output.bam}
+        """
+
+rule gatk_chained:
+    input:
+        bam="{benchmark}/source.bam",
+        index="{benchmark}/source.bam.bai",
+        coefficient="{benchmark}/coefficient.txt",
+    output:
+        bam="{benchmark}/downsampled-bams/gatk-chained-rep{rep}.bam",
+    benchmark:
+        "{benchmark}/resource-benchmarks/gatk-chained-rep{rep}.tsv"
+    params:
+        coefficient=lambda wc, input: float(open(input.coefficient).read().strip()),
+    container:
+        "bench.sif",
+    resources:
+        cpus_per_task=cpus_per_task,
+        mem_mb=mem_mb,
+        runtime=runtime,
+    shell:
+        """
+        gatk --java-options "-Xmx8G" DownsampleSam \
         -S Chained \
-        -P "$(cat {input.coefficient})" \
-        -R {params.rng_seed} \
+        -P {params.coefficient} \
+        -R null \
         -I {input.bam} \
         -O {output.bam}
         """
@@ -376,24 +299,22 @@ rule samtools:
         index="{benchmark}/source.bam.bai",
         coefficient="{benchmark}/coefficient.txt",
     output:
-        bam="{benchmark}/samtools.rep{rep}.bam",
+        bam="{benchmark}/downsampled-bams/samtools-rep{rep}.bam",
     benchmark:
-        "{benchmark}/benchmarks/samtools.rep{rep}.tsv"
+        "{benchmark}/resource-benchmarks/samtools-rep{rep}.tsv"
     params:
-        rng_seed=lambda wc: derive_u31(WORKFLOW_ROOT_SEED, wc.benchmark, "samtools", int(wc.rep)),
-    wildcard_constraints:
-        rep=r"\d+",
-    resources:
-        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
-        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
-        time=lambda wc: get_config(wc.benchmark, "time"),
+        coefficient=lambda wc, input: float(open(input.coefficient).read().strip()),
     container:
-        "bench.sif"
+        "bench.sif",
+    resources:
+        cpus_per_task=cpus_per_task,
+        mem_mb=mem_mb,
+        runtime=runtime,
     shell:
-        """
+        r"""
         samtools view {input.bam} \
-        --subsample "$(cat {input.coefficient})" \
-        --subsample-seed {params.rng_seed} \
+        --subsample {params.coefficient} \
+        --subsample-seed $RANDOM \
         -b -o {output.bam}
         """
 
@@ -403,910 +324,536 @@ rule sambamba:
         index="{benchmark}/source.bam.bai",
         coefficient="{benchmark}/coefficient.txt",
     output:
-        bam="{benchmark}/sambamba.rep{rep}.bam",
+        bam="{benchmark}/downsampled-bams/sambamba-rep{rep}.bam",
     benchmark:
-        "{benchmark}/benchmarks/sambamba.rep{rep}.tsv"
+        "{benchmark}/resource-benchmarks/sambamba-rep{rep}.tsv"
     params:
-        rng_seed=lambda wc: derive_u31(WORKFLOW_ROOT_SEED, wc.benchmark, "sambamba", int(wc.rep)),
-    wildcard_constraints:
-        rep=r"\d+",
-    resources:
-        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
-        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
-        time=lambda wc: get_config(wc.benchmark, "time"),
+        coefficient=lambda wc, input: float(open(input.coefficient).read().strip())
     container:
-        "bench.sif"
+        "bench.sif",
+    resources:
+        cpus_per_task=cpus_per_task,
+        mem_mb=mem_mb,
+        runtime=runtime,
     shell:
-        """
+        r"""
         sambamba view {input.bam} \
         -f bam \
-        --subsample "$(cat {input.coefficient})" \
-        --subsampling-seed {params.rng_seed} \
+        --subsample {params.coefficient} \
+        --subsampling-seed $RANDOM \
         -o {output.bam}
         """
 
-rule samsampleX_map:
-    """One BED template: combine depth from all configured template BAMs (map_mode from config)."""
-    input:
-        master_seeds=MASTER_SEEDS_JSON,
-        template_bams=lambda wc: get_templates(wc.benchmark),
-        source="{benchmark}/source.bam",
-        source_index="{benchmark}/source.bam.bai",
-    params:
-        region=lambda wc: get_region(wc.benchmark),
-        collapse=lambda wc: get_config(wc.benchmark, "collapse"),
-        map_mode=lambda wc: get_map_mode(wc.benchmark),
-        map_seed=lambda wc: derive_map_seed(WORKFLOW_ROOT_SEED, wc.benchmark),
-    output:
-        bed="{benchmark}/samsampleX-template.bed",
-    benchmark:
-        "{benchmark}/benchmarks/samsampleX-map.tsv"
-    resources:
-        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
-        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
-        time=lambda wc: get_config(wc.benchmark, "time"),
-    container:
-        "bench.sif"
-    shell:
-        """
-        samsampleX map \
-        --template-bam {input.template_bams} \
-        --region {params.region} \
-        --collapse {params.collapse} \
-        --mode {params.map_mode} \
-        --seed {params.map_seed} \
-        --out-bed {output.bed}
-        """
-
-rule samsampleX_sampling:
-    """Downsample using samsampleX; template depth profile comes from combined map output.
-
-    Config ``sample_mode`` is passed as ``--stat`` (how to summarize template/source ratio
-    along each read). ``--mode`` is only for combining multiple template BEDs (not used here).
-    """
+rule samsampleX_templated:
     input:
         bam="{benchmark}/source.bam",
         index="{benchmark}/source.bam.bai",
-        template_bed="{benchmark}/samsampleX-template.bed",
-    params:
-        sample_mode=lambda wc: get_sample_mode(wc.benchmark),
-        region=lambda wc: get_region(wc.benchmark),
-        rng_seed=lambda wc: derive_u31(
-            WORKFLOW_ROOT_SEED, wc.benchmark, "samsampleX-sample", int(wc.rep)
-        ),
-    wildcard_constraints:
-        rep=r"\d+",
+        bed="{benchmark}/template.bed",
     output:
-        bam="{benchmark}/samsampleX-sample.rep{rep}.bam",
+        bam="{benchmark}/downsampled-bams/samsampleX-rep{rep}.bam",
     benchmark:
-        "{benchmark}/benchmarks/samsampleX-sample.rep{rep}.tsv"
-    resources:
-        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
-        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
-        time=lambda wc: get_config(wc.benchmark, "time"),
+        "{benchmark}/resource-benchmarks/samsampleX-rep{rep}.tsv"
+    wildcard_constraints:
+        benchmark="^templated.*",
+    params:
+        region=lambda wc: config["benchmarks"][wc.benchmark]["region"],
     container:
-        "bench.sif"
+        "bench.sif",
+    resources:
+        cpus_per_task=cpus_per_task,
+        mem_mb=mem_mb,
+        runtime=runtime,
     shell:
-        """
+        r"""
         samsampleX sample \
         --source-bam {input.bam} \
-        --template-bed {input.template_bed} \
-        --out-bam {output.bam} \
+        --template-bed {input.bed} \
         --region {params.region} \
-        --seed {params.rng_seed} \
-        --stat {params.sample_mode}
+        --seed $RANDOM \
+        --threads {resources.cpus_per_task} \
+        --out-bam {output.bam}
         """
-
-rule uniform_plot_template_bed:
-    """Target depth curve for plots: source depth × coefficient (no cohort map)."""
-    input:
-        bam="{benchmark}/source.bam",
-        index="{benchmark}/source.bam.bai",
-        coefficient="{benchmark}/coefficient.txt",
-    output:
-        bed="{benchmark}/uniform-plot-template.bed",
-    params:
-        region=lambda wc: get_region(wc.benchmark),
-    resources:
-        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
-        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
-        time=lambda wc: get_config(wc.benchmark, "time"),
-    container:
-        "bench.sif"
-    shell:
-        dedent(
-            """
-            python3 << 'PY'
-            import numpy as np
-            from samsamplex.depth import DepthArray, depth_from_bam, region_parse
-            from samsamplex.bed import write_bed_output
-
-            bam = "{input.bam}"
-            out_path = "{output.bed}"
-            region = region_parse("{params.region}")
-            with open("{input.coefficient}") as _cf:
-                coef = float(_cf.read().strip())
-            arr = depth_from_bam(bam, region.contig, region.start, region.end)
-            scaled = np.maximum(0, np.round(arr.depths.astype(float) * coef)).astype(np.int32)
-            scaled_arr = DepthArray(arr.contig, arr.start, arr.end, scaled)
-            with open(out_path, "w") as fp:
-                write_bed_output(fp, scaled_arr)
-            PY
-            """
-        ).strip() + "\n"
 
 rule samsampleX_uniform:
-    """Uniform downsampling via samsampleX (no template BED or map step)."""
     input:
         bam="{benchmark}/source.bam",
         index="{benchmark}/source.bam.bai",
-        coefficient="{benchmark}/coefficient.txt",
-    params:
-        region=lambda wc: get_region(wc.benchmark),
-        rng_seed=lambda wc: derive_u31(
-            WORKFLOW_ROOT_SEED, wc.benchmark, "samsampleX-uniform", int(wc.rep)
-        ),
-    wildcard_constraints:
-        rep=r"\d+",
     output:
-        bam="{benchmark}/samsampleX-uniform.rep{rep}.bam",
+        bam="{benchmark}/downsampled-bams/samsampleX-rep{rep}.bam",
     benchmark:
-        "{benchmark}/benchmarks/samsampleX-uniform.rep{rep}.tsv"
-    resources:
-        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
-        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
-        time=lambda wc: get_config(wc.benchmark, "time"),
+        "{benchmark}/resource-benchmarks/samsampleX-rep{rep}.tsv"
+    wildcard_constraints:
+        benchmark="^uniform.*",
+    params:
+        region=lambda wc: config["benchmarks"][wc.benchmark]["region"],
+        target_depth=lambda wc: config["benchmarks"][wc.benchmark]["target_depth"],
     container:
-        "bench.sif"
+        "bench.sif",
+    resources:
+        cpus_per_task=cpus_per_task,
+        mem_mb=mem_mb,
+        runtime=runtime,
     shell:
-        """
+        r"""
         samsampleX sample \
         --source-bam {input.bam} \
-        --uniform "$(cat {input.coefficient})" \
-        --out-bam {output.bam} \
+        --uniform {params.target_depth} \
         --region {params.region} \
-        --seed {params.rng_seed}
+        --seed $RANDOM \
+        --threads {resources.cpus_per_task} \
+        --out-bam {output.bam}
         """
 
-rule index_output_bam:
-    """Index output BAM files for stats comparison"""
+rule get_depths:
     input:
-        bam="{benchmark}/{tool}.rep{rep}.bam"
-    output:
-        index="{benchmark}/{tool}.rep{rep}.bam.bai"
-    wildcard_constraints:
-        rep=r"\d+",
-        tool=TOOL_PATTERN,
-    container:
-        "bench.sif"
-    shell:
-        """
-        samtools index {input.bam}
-        """
-
-rule compare_stats:
-    """samsampleX stats: reference (BED or BAM) vs each tool output."""
-    input:
-        tool_bam="{benchmark}/{tool}.rep{rep}.bam",
-        tool_index="{benchmark}/{tool}.rep{rep}.bam.bai",
-        reference=lambda wc: get_stats_reference(wc.benchmark),
+        bams=expand("{{benchmark}}/downsampled-bams/{tool}-rep{rep}.bam", tool=config["parameters"]["tools"], rep=rep),
+        index=expand("{{benchmark}}/downsampled-bams/{tool}-rep{rep}.bam.bai", tool=config["parameters"]["tools"], rep=rep),
     params:
-        region=lambda wc: get_region(wc.benchmark),
-    wildcard_constraints:
-        rep=r"\d+",
-        tool=TOOL_PATTERN,
+        region=lambda wc: config["benchmarks"][wc.benchmark]["region"],
     output:
-        stats="{benchmark}/{tool}.rep{rep}.stats"
+        list="{benchmark}/depths.list",
+        depths="{benchmark}/depths.tsv",
+    container:
+        "bench.sif",
     resources:
-        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
-        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
-        time=lambda wc: get_config(wc.benchmark, "time"),
-    container:
-        "bench.sif"
+        cpus_per_task=cpus_per_task,
+        mem_mb=mem_mb,
+        runtime=runtime,
     shell:
-        """
-        samsampleX stats \
-            --a {input.reference} \
-            --b {input.tool_bam} \
-            --region {params.region} \
-            2> {output.stats}
-        """
-
-# Uniform benchmarks only (requested via stats_summary inputs). BAM A = competitor, B = samsampleX-uniform.
-rule compare_stats_uniform_pairwise:
-    input:
-        ref_bam="{benchmark}/{ref_tool}.rep{rep}.bam",
-        ref_index="{benchmark}/{ref_tool}.rep{rep}.bam.bai",
-        samsamplex_bam="{benchmark}/samsampleX-uniform.rep{rep}.bam",
-        samsamplex_index="{benchmark}/samsampleX-uniform.rep{rep}.bam.bai",
-    params:
-        region=lambda wc: get_region(wc.benchmark),
-    wildcard_constraints:
-        rep=r"\d+",
-        ref_tool=REF_TOOL_PATTERN,
-    output:
-        stats="{benchmark}/samsampleX-uniform.vs.{ref_tool}.rep{rep}.stats",
-    resources:
-        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
-        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
-        time=lambda wc: get_config(wc.benchmark, "time"),
-    container:
-        "bench.sif"
-    shell:
-        """
-        samsampleX stats \
-            --a {input.ref_bam} \
-            --b {input.samsamplex_bam} \
-            --region {params.region} \
-            2> {output.stats}
+        r"""
+        echo "{input.bams}" | tr ' ' '\n' > {output.list} &&
+        samtools depth \
+        -f {output.list} \
+        -r {params.region} \
+        -H -q 0 -Q 0 > {output.depths}
         """
 
-
-# Uniform only: BAM A = tool_a, B = tool_b (filename matches samsampleX stats orientation).
-rule compare_stats_uniform_ordered_pair:
+rule full_summary:
     input:
-        bam_a="{benchmark}/{tool_a}.rep{rep}.bam",
-        index_a="{benchmark}/{tool_a}.rep{rep}.bam.bai",
-        bam_b="{benchmark}/{tool_b}.rep{rep}.bam",
-        index_b="{benchmark}/{tool_b}.rep{rep}.bam.bai",
-    params:
-        region=lambda wc: get_region(wc.benchmark),
-    wildcard_constraints:
-        rep=r"\d+",
-        tool_a=TOOL_PATTERN,
-        tool_b=TOOL_PATTERN,
-    output:
-        stats="{benchmark}/pairstats/{tool_a}.vs.{tool_b}.rep{rep}.stats",
-    resources:
-        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
-        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
-        time=lambda wc: get_config(wc.benchmark, "time"),
-    container:
-        "bench.sif"
-    shell:
-        """
-        mkdir -p $(dirname {output.stats})
-        samsampleX stats \
-            --a {input.bam_a} \
-            --b {input.bam_b} \
-            --region {params.region} \
-            2> {output.stats}
-        """
-
-
-rule uniform_pairwise_metrics_matrix:
-    input:
-        pairstats=lambda wc: get_uniform_pairwise_pairstat_paths(wc),
-    output:
-        matrix="{benchmark}/stats_pairwise_matrix.tsv",
-    params:
-        sigfigs=BENCHMARK_OUTPUT_SIGFIGS,
-    run:
-        import re
-        import statistics
-
-        sf = int(params.sigfigs)
-        if not uses_uniform_samsample(wildcards.benchmark):
-            raise ValueError(
-                f"stats_pairwise_matrix.tsv is only produced for uniform benchmarks, not {wildcards.benchmark!r}"
-            )
-
-        def parse_stats_file(filepath):
-            data = {}
-            with open(filepath) as f:
-                for line in f:
-                    line = line.strip()
-                    if "Mean Absolute Error:" in line:
-                        match = re.search(r"([\d.]+)\s*$", line)
-                        if match:
-                            data["mae"] = float(match.group(1))
-                    elif "Wasserstein" in line:
-                        match = re.search(r"([\d.]+)\s*$", line)
-                        if match:
-                            data["wasserstein"] = float(match.group(1))
-            return data
-
-        tools = get_comparison_tools(wildcards.benchmark)
-        reps = replicate_indices(wildcards.benchmark)
-        # (tool_a, tool_b) -> list of {mae, wasserstein}
-        by_pair = {(ta, tb): [] for ta in tools for tb in tools}
-        for ta in tools:
-            for tb in tools:
-                for rep in reps:
-                    fp = f"{wildcards.benchmark}/pairstats/{ta}.vs.{tb}.rep{rep}.stats"
-                    parsed = parse_stats_file(fp)
-                    if parsed:
-                        by_pair[(ta, tb)].append(parsed)
-
-        def mean_std(values):
-            values = [v for v in values if v is not None]
-            if not values:
-                return None, None
-            m = statistics.mean(values)
-            s = statistics.stdev(values) if len(values) > 1 else 0.0
-            return m, s
-
-        def format_cell(mae_list, w_list):
-            maem, maes = mean_std(mae_list)
-            w1m, w1s = mean_std(w_list)
-            if maem is None or w1m is None:
-                return "NA"
-            return (
-                f"{format_float_sigfigs(maem, sf)} ({format_float_sigfigs(maes, sf)}) | "
-                f"{format_float_sigfigs(w1m, sf)} ({format_float_sigfigs(w1s, sf)})"
-            )
-
-        with open(output.matrix, "w") as out:
-            header = [""] + tools
-            out.write("\t".join(header) + "\n")
-            for ta in tools:
-                row_cells = [ta]
-                for tb in tools:
-                    rows = by_pair.get((ta, tb), [])
-                    mae_vals = [r.get("mae") for r in rows]
-                    w_vals = [r.get("wasserstein") for r in rows]
-                    row_cells.append(format_cell(mae_vals, w_vals))
-                out.write("\t".join(row_cells) + "\n")
-
-
-def get_all_benchmark_files(benchmark, pattern):
-    reps = replicate_indices(benchmark)
-    return [pattern.format(benchmark=benchmark, rep=r) for r in reps]
-
-rule results:
-    input:
-        benchmarks=lambda wc: [
-            f"{wc.benchmark}/benchmarks/{tool}.rep{rep}.tsv"
-            for tool in get_comparison_tools(wc.benchmark)
-            for rep in replicate_indices(wc.benchmark)
-        ]
-        + (
-            []
-            if uses_uniform_samsample(wc.benchmark)
-            else [f"{wc.benchmark}/benchmarks/samsampleX-map.tsv"]
-        ),
-    output:
-        results="{benchmark}/results.tsv"
-    run:
-        def parse_benchmark(filepath):
-            """Parse Snakemake benchmark TSV file"""
-            with open(filepath) as f:
-                header = f.readline().strip().split('\t')
-                values = f.readline().strip().split('\t')
-            return dict(zip(header, values))
-        
-        results = []
-        reps = replicate_indices(wildcards.benchmark)
-        cmp_tools = get_comparison_tools(wildcards.benchmark)
-
-        for tool in cmp_tools:
-            for rep in reps:
-                path = f"{wildcards.benchmark}/benchmarks/{tool}.rep{rep}.tsv"
-                data = parse_benchmark(path)
-                data["tool"] = tool
-                data["rep"] = str(rep)
-                results.append(data)
-
-        # samsampleX map (single run combining all template BAMs); not used for uniform benchmarks
-        if not uses_uniform_samsample(wildcards.benchmark):
-            path = f"{wildcards.benchmark}/benchmarks/samsampleX-map.tsv"
-            data = parse_benchmark(path)
-            data["tool"] = "samsampleX-map"
-            data["rep"] = "NA"
-            results.append(data)
-
-        headers = ["s", "h:m:s", "max_rss", "max_vms", "max_uss", "max_pss", "io_in", "io_out", "mean_load", "cpu_time"]
-
-        with open(output.results, 'w') as out:
-            out.write('\t'.join(['tool', 'rep'] + headers) + '\n')
-            for data in results:
-                row = [data.get("tool", ""), data.get("rep", "")] + [data.get(h, '') for h in headers]
-                out.write('\t'.join(row) + '\n')
-
-
-rule results_summary:
-    input:
-        results="{benchmark}/results.tsv"
-    output:
-        summary="{benchmark}/results_summary.tsv"
-    params:
-        sigfigs=BENCHMARK_OUTPUT_SIGFIGS,
-    run:
-        import statistics
-
-        sf = int(params.sigfigs)
-
-        def parse_numeric(val):
-            if not val or val == "NA":
-                return None
-            try:
-                return float(val)
-            except ValueError:
-                return None
-        
-        with open(input.results) as f:
-            header = f.readline().strip().split('\t')
-            rows = [line.strip().split('\t') for line in f if line.strip()]
-        
-        tool_data = {}
-        for row in rows:
-            row_dict = dict(zip(header, row))
-            tool = row_dict['tool']
-            if tool not in tool_data:
-                tool_data[tool] = []
-            tool_data[tool].append(row_dict)
-        
-        numeric_cols = ["s", "max_rss", "max_vms", "max_uss", "max_pss", "io_in", "io_out", "mean_load", "cpu_time"]
-        
-        summary_rows = []
-        for tool, reps in tool_data.items():
-            summary = {'tool': tool, 'n_replicates': len(reps)}
-            
-            for col in numeric_cols:
-                values = [parse_numeric(r.get(col, '')) for r in reps]
-                values = [v for v in values if v is not None]
-                
-                if values:
-                    summary[f'{col}_mean'] = format_float_sigfigs(statistics.mean(values), sf)
-                    summary[f'{col}_std'] = (
-                        format_float_sigfigs(statistics.stdev(values), sf)
-                        if len(values) > 1
-                        else "NA"
-                    )
-                else:
-                    summary[f'{col}_mean'] = "NA"
-                    summary[f'{col}_std'] = "NA"
-            
-            summary_rows.append(summary)
-        
-        if summary_rows:
-            summary_headers = list(summary_rows[0].keys())
-            with open(output.summary, 'w') as out:
-                out.write('\t'.join(summary_headers) + '\n')
-                for row in summary_rows:
-                    out.write('\t'.join(str(row.get(h, '')) for h in summary_headers) + '\n')
-
-
-rule stats_summary:
-    input:
-        stats=lambda wc: (
-            [
-                f"{wc.benchmark}/samsampleX-uniform.vs.{ref_tool}.rep{rep}.stats"
-                for ref_tool in get_non_samsamplex_comparison_tools(wc.benchmark)
-                for rep in replicate_indices(wc.benchmark)
-            ]
-            if uses_uniform_samsample(wc.benchmark)
-            else [
-                f"{wc.benchmark}/{tool}.rep{rep}.stats"
-                for tool in get_comparison_tools(wc.benchmark)
-                for rep in replicate_indices(wc.benchmark)
-            ]
-        ),
-    output:
-        summary="{benchmark}/stats_summary.tsv"
-    params:
-        sigfigs=BENCHMARK_OUTPUT_SIGFIGS,
-    run:
-        import re
-        import statistics
-
-        sf = int(params.sigfigs)
-
-        def parse_stats_file(filepath):
-            data = {}
-            with open(filepath) as f:
-                for line in f:
-                    line = line.strip()
-                    if "Mean Depth (BAM A):" in line:
-                        match = re.search(r'([\d.]+)\s*$', line)
-                        if match:
-                            data['mean_depth_template'] = float(match.group(1))
-                    elif "Mean Depth (BAM B):" in line:
-                        match = re.search(r'([\d.]+)\s*$', line)
-                        if match:
-                            data['mean_depth_tool'] = float(match.group(1))
-                    elif "Mean Absolute Error:" in line:
-                        match = re.search(r'([\d.]+)\s*$', line)
-                        if match:
-                            data['mae'] = float(match.group(1))
-                    elif "Mean signed depth diff:" in line:
-                        match = re.search(
-                            r'Mean signed depth diff:\s*([+-]?[\d.]+(?:[eE][+-]?\d+)?)',
-                            line,
-                        )
-                        if match:
-                            data["signed_depth"] = float(match.group(1))
-                    elif "Wasserstein" in line:
-                        match = re.search(r'([\d.]+)\s*$', line)
-                        if match:
-                            data['wasserstein'] = float(match.group(1))
-            return data
-        
-        reps = replicate_indices(wildcards.benchmark)
-        if uses_uniform_samsample(wildcards.benchmark):
-            ref_tools = get_non_samsamplex_comparison_tools(wildcards.benchmark)
-            group_keys = [f"samsampleX-vs-{rt}" for rt in ref_tools]
-            tool_results = {k: [] for k in group_keys}
-            for ref_tool in ref_tools:
-                label = f"samsampleX-vs-{ref_tool}"
-                for rep in reps:
-                    filepath = f"{wildcards.benchmark}/samsampleX-uniform.vs.{ref_tool}.rep{rep}.stats"
-                    data = parse_stats_file(filepath)
-                    if data:
-                        tool_results[label].append(data)
-            row_order = group_keys
-        else:
-            cmp_tools = get_comparison_tools(wildcards.benchmark)
-            tool_results = {tool: [] for tool in cmp_tools}
-            for tool in cmp_tools:
-                for rep in reps:
-                    filepath = f"{wildcards.benchmark}/{tool}.rep{rep}.stats"
-                    data = parse_stats_file(filepath)
-                    if data:
-                        tool_results[tool].append(data)
-            row_order = cmp_tools
-        
-        summary_rows = []
-        metrics = ["mae", "signed_depth", "wasserstein", "mean_depth_tool"]
-        
-        for tool in row_order:
-            results = tool_results[tool]
-            if not results:
-                continue
-            
-            row = {'tool': tool}
-            
-            for metric in metrics:
-                values = [r.get(metric) for r in results if r.get(metric) is not None]
-                if values:
-                    row[f'{metric}_mean'] = statistics.mean(values)
-                    row[f'{metric}_std'] = statistics.stdev(values) if len(values) > 1 else 0.0
-                else:
-                    row[f'{metric}_mean'] = 'NA'
-                    row[f'{metric}_std'] = 'NA'
-            
-            summary_rows.append(row)
-        
-        headers = [
-            "tool",
-            "mae_mean",
-            "mae_std",
-            "signed_depth_mean",
-            "signed_depth_std",
-            "wasserstein_mean",
-            "wasserstein_std",
-            "mean_depth_tool_mean",
-            "mean_depth_tool_std",
-        ]
-        
-        with open(output.summary, 'w') as out:
-            out.write('\t'.join(headers) + '\n')
-            for row in summary_rows:
-                values = []
-                for h in headers:
-                    val = row.get(h, 'NA')
-                    if isinstance(val, float):
-                        values.append(format_float_sigfigs(val, sf))
-                    else:
-                        values.append(str(val))
-                out.write('\t'.join(values) + '\n')
-
-
-rule samtools_depth_summary:
-    """Per-tool mean of per-base depths (samtools depth) per seed; aggregate mean/std across seeds."""
-    input:
-        lambda wc: (
-            [
-                f"{wc.benchmark}/{tool}.rep{rep}.bam"
-                for tool in get_comparison_tools(wc.benchmark)
-                for rep in replicate_indices(wc.benchmark)
-            ]
-            + [
-                f"{wc.benchmark}/{tool}.rep{rep}.bam.bai"
-                for tool in get_comparison_tools(wc.benchmark)
-                for rep in replicate_indices(wc.benchmark)
-            ]
-        ),
-    output:
-        summary="{benchmark}/samtools_depth_summary.tsv"
-    params:
-        sigfigs=BENCHMARK_OUTPUT_SIGFIGS,
-    resources:
-        cpus=lambda wc: get_config(wc.benchmark, "cpu"),
-        mem_mb=lambda wc: get_config(wc.benchmark, "mem_mb"),
-        time=lambda wc: get_config(wc.benchmark, "time"),
-    container:
-        "bench.sif"
-    run:
-        import math
-        import statistics
-        import subprocess
-
-        sf = int(params.sigfigs)
-        benchmark = wildcards.benchmark
-        region = get_region(benchmark)
-        tools = get_comparison_tools(benchmark)
-        reps = replicate_indices(benchmark)
-
-        def mean_depth_one_bam(bam_path):
-            p = subprocess.Popen(
-                ["samtools", "depth", "-r", region, bam_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            total = 0
-            n = 0
-            for line in p.stdout:
-                parts = line.rstrip().split("\t")
-                if len(parts) >= 3:
-                    total += int(parts[2])
-                    n += 1
-            err = p.stderr.read()
-            rc = p.wait()
-            if rc != 0:
-                raise RuntimeError(f"samtools depth failed for {bam_path}: {err!r}")
-            if n == 0:
-                return None
-            return total / n
-
-        rows_out = []
-        for tool in tools:
-            per_seed = []
-            for rep in reps:
-                bam = f"{benchmark}/{tool}.rep{rep}.bam"
-                m = mean_depth_one_bam(bam)
-                if m is not None:
-                    per_seed.append(m)
-            if per_seed:
-                dm = statistics.mean(per_seed)
-                ds = statistics.stdev(per_seed) if len(per_seed) > 1 else 0.0
-            else:
-                dm, ds = float("nan"), float("nan")
-            rows_out.append((tool, dm, ds))
-
-        with open(output.summary, "w") as out:
-            out.write("tool\tdepth_mean\tdepth_std\n")
-            for tool, dm, ds in rows_out:
-                if math.isnan(dm):
-                    out.write(f"{tool}\tNA\tNA\n")
-                else:
-                    out.write(
-                        f"{tool}\t{format_float_sigfigs(dm, sf)}\t{format_float_sigfigs(ds, sf)}\n"
-                    )
-
-
-rule consolidated_summary:
-    input:
-        runtime="{benchmark}/results_summary.tsv",
-        accuracy="{benchmark}/stats_summary.tsv",
-        depth="{benchmark}/samtools_depth_summary.tsv",
+        resources=expand("{{benchmark}}/resource-benchmarks/{tool}-rep{rep}.tsv", tool=config["parameters"]["tools"], rep=rep),
+        depths="{benchmark}/depths.tsv",
         coefficient="{benchmark}/coefficient.txt",
+        template_depths="{benchmark}/template-depths.tsv",
     output:
-        consolidated="benchmark-{benchmark}.tsv"
+        summary="{benchmark}/summary.tsv",
+        accuracy="{benchmark}/accuracy.tsv",
+        depths_comparison_matrix="{benchmark}/depths-comparison-matrix.tsv",
     params:
-        sigfigs=BENCHMARK_OUTPUT_SIGFIGS,
+        tools=config["parameters"]["tools"],
+        coefficient=lambda wc, input: float(open(input.coefficient).read().strip()),
+        target_depth=lambda wc: config["benchmarks"].get(wc.benchmark, {}).get("target_depth", None),
+    container:
+        "bench.sif",
+    resources:
+        cpus_per_task=cpus_per_task,
+        mem_mb=32768,
+        runtime=runtime,
     run:
-        sf = int(params.sigfigs)
-        runtime_data = {}
-        with open(input.runtime) as f:
-            header = f.readline().strip().split('\t')
-            col_idx = {h: i for i, h in enumerate(header)}
-            for line in f:
-                if not line.strip():
-                    continue
-                fields = line.strip().split('\t')
-                tool = fields[0]
-                if "samsampleX-map" in tool:
-                    continue
-                
-                wall_mean = fields[col_idx.get('s_mean', -1)]
-                wall_std = fields[col_idx.get('s_std', -1)]
-                mem_mean = fields[col_idx.get('max_rss_mean', -1)]
-                mem_std = fields[col_idx.get('max_rss_std', -1)]
-                
-                try:
-                    mem_mean_gb = float(mem_mean) / 1000
-                    mem_std_gb = float(mem_std) / 1000 if mem_std != "NA" else 0
-                except (ValueError, TypeError):
-                    mem_mean_gb = 0
-                    mem_std_gb = 0
-                
-                runtime_data[tool] = {
-                    'wall_mean': wall_mean,
-                    'wall_std': wall_std,
-                    'mem_mean_gb': mem_mean_gb,
-                    'mem_std_gb': mem_std_gb,
-                }
+        import pandas as pd
+        import numpy as np
+        import itertools
+
+        # Aggregate resource usage statistics
+        rows = []
+        for tool in params.tools:
+            files = [f for f in input.resources if tool in f]
+            df = pd.concat([pd.read_csv(f, sep="\t") for f in files], axis=0)[["cpu_time", "max_rss"]]
+            df["max_rss"] = df["max_rss"] / 1024
+            rows.append({
+                "Tool": tool,
+                "Mean runtime [s] (SD)": f"{df['cpu_time'].mean():>6.3f} ({df['cpu_time'].std():>6.3f})",
+                "Mean memory [GB] (SD)": f"{df['max_rss'].mean():>6.3f} ({df['max_rss'].std():>6.3f})",
+            })
+
+        resource_usage = pd.DataFrame(rows)
+
+        # Read column names
+        depth_cols = pd.read_csv(input.depths, sep="\t", nrows=0).columns
+
+        # Average means across replicates
+        depths = pd.DataFrame()
+        rows = []
+        for tool in params.tools:
+            dp = pd.read_csv(input.depths, sep="\t", usecols=[t for t in depth_cols if tool in t])
+            depths[tool + "_mean"] = dp.mean(axis=1)
+            depths[tool + "_std"] = dp.std(axis=1)
+
+            row = {
+                "Tool": tool,
+                "Mean depth (SD)": f"{depths[tool + '_mean'].mean():>6.3f} ({depths[tool + '_std'].mean():>6.3f})",
+                "Downsampling coefficient": f"{params.coefficient:>6.3f}" if tool != "samsampleX" else "-",
+            }
+
+            if wildcards.benchmark.startswith("templated"):
+                # template_bed = pd.read_csv(f"{wildcards.benchmark}/template.bed", sep="\t", header=None, usecols=[3])
+                bam_cols = pd.read_csv(f"{wildcards.benchmark}/template-depths.tsv", sep="\t", nrows=0).columns
+                template_depths = pd.read_csv(f"{wildcards.benchmark}/template-depths.tsv", sep="\t", usecols=[c for c in bam_cols if ".bam" in c])
+                # assert len(template_depths) == len(depths), f"Expected template bed and depths to have the same length {len(template_depths)} != {len(depths)}"
+                depths["template_mean"] = template_depths.mean(axis=1)
+                depths["template_std"] = template_depths.std(axis=1)
+                row["Mean template depth (SD)"] = f"{depths['template_mean'].mean():>6.3f} ({depths['template_std'].mean():>6.3f})" if tool == "samsampleX" else "-"
+
+                depths["abs_depth_diff_mean"] = np.abs(depths["template_mean"].sub(depths[tool + "_mean"], fill_value=0))
+                depths["abs_depth_diff_std"] = np.abs(depths["template_std"].sub(depths[tool + "_std"], fill_value=0))
+                row["Mean absolute depth difference to template (SD)"] = f"{depths['abs_depth_diff_mean'].mean():>6.3f} ({depths['abs_depth_diff_std'].mean():>6.3f})"
+
+                depths["depth_diff_mean"] = depths["template_mean"].sub(depths[tool + "_mean"], fill_value=0)
+                depths["depth_diff_std"] = depths["template_std"].sub(depths[tool + "_std"], fill_value=0)
+                row["Mean depth difference to template (SD)"] = f"{depths['depth_diff_mean'].mean():>6.3f} ({depths['depth_diff_std'].mean():>6.3f})"
+
+            elif wildcards.benchmark.startswith("uniform"):
+                depths["target_depth"] = params.target_depth
+                depths["target_depth_mean"] = depths["target_depth"]
+                depths["target_depth_std"] = 0
+
+                row["Target depth"] = f"{depths['target_depth'].mean():>6.3f} ({depths['target_depth'].std():>6.3f})" if tool == "samsampleX" else "-"
+
+                depths["abs_depth_diff_mean"] = np.abs(depths["target_depth_mean"].sub(depths[tool + "_mean"], fill_value=0))
+                depths["abs_depth_diff_std"] = np.abs(depths["target_depth_std"].sub(depths[tool + "_std"], fill_value=0))
+                row["Mean absolute depth difference to target (SD)"] = f"{depths['abs_depth_diff_mean'].mean():>6.3f} ({depths['abs_depth_diff_std'].mean():>6.3f})"
+
+                depths["depth_diff_mean"] = depths["target_depth_mean"].sub(depths[tool + "_mean"], fill_value=0)
+                depths["depth_diff_std"] = depths["target_depth_std"].sub(depths[tool + "_std"], fill_value=0)
+                row["Mean depth difference to target (SD)"] = f"{depths['depth_diff_mean'].mean():>6.3f} ({depths['depth_diff_std'].mean():>6.3f})"
+
+            rows.append(row)
+        accuracy = pd.DataFrame(rows)
+        accuracy.to_csv(output.accuracy, sep="\t", index=False)
+
+        # Make tool comparison matrix
+        depths_comparison_matrix = pd.DataFrame(pd.NA,index=params.tools, columns=params.tools)
         
-        accuracy_data = {}
-        with open(input.accuracy) as f:
-            header = f.readline().strip().split('\t')
-            col_idx = {h: i for i, h in enumerate(header)}
-            for line in f:
-                if not line.strip():
-                    continue
-                fields = line.strip().split('\t')
-                tool = fields[0]
-                
-                accuracy_data[tool] = {
-                    "mae_mean": fields[col_idx.get("mae_mean", -1)],
-                    "mae_std": fields[col_idx.get("mae_std", -1)],
-                    "signed_depth_mean": fields[
-                        col_idx.get("signed_depth_mean", -1)
-                    ],
-                    "signed_depth_std": fields[
-                        col_idx.get("signed_depth_std", -1)
-                    ],
-                    "w1_mean": fields[col_idx.get("wasserstein_mean", -1)],
-                    "w1_std": fields[col_idx.get("wasserstein_std", -1)],
-                }
+        # Populate diagonal values
+        for tool in params.tools:
+            diff_mean = np.abs(depths[tool + "_mean"].sub(depths[tool + "_mean"], fill_value=0))
+            diff_std = np.abs(depths[tool + "_std"].sub(depths[tool + "_std"], fill_value=0))
+            depths_comparison_matrix.loc[tool, tool] = f"{np.abs(diff_mean).mean():>6.3f} ({np.abs(diff_std).mean():>6.3f}) | {diff_mean.mean():>6.3f} ({diff_std.mean():>6.3f})"
+        
+        # Populate lower triangle (column - rows)
+        for tool_a, tool_b in itertools.combinations(params.tools, 2):
+            diff_mean = np.abs(depths[tool_b + "_mean"].sub(depths[tool_a + "_mean"], fill_value=0))
+            diff_std = np.abs(depths[tool_b + "_std"].sub(depths[tool_a + "_std"], fill_value=0))
+            depths_comparison_matrix.loc[tool_b, tool_a] = f"{np.abs(diff_mean).mean():>6.3f} ({np.abs(diff_std).mean():>6.3f}) | {diff_mean.mean():>6.3f} ({diff_std.mean():>6.3f})"
 
-        depth_data = {}
-        with open(input.depth) as f:
-            f.readline()
-            for line in f:
-                if not line.strip():
-                    continue
-                fields = line.strip().split('\t')
-                if len(fields) >= 3:
-                    depth_data[fields[0]] = {'mean': fields[1], 'std': fields[2]}
+        depths_comparison_matrix.to_csv(output.depths_comparison_matrix, sep="\t", header=True, index=True)
 
-        with open(input.coefficient) as _cf:
-            coeff_val = float(_cf.read().strip())
-        coeff_str = format_float_sigfigs(coeff_val, sf)
+        summary = pd.merge(resource_usage, accuracy, on="Tool", how="inner")
+        summary.to_csv(output.summary, sep="\t", index=False)
 
-        def depth_cell(label):
-            key = label[len("samsampleX-vs-"):] if label.startswith("samsampleX-vs-") else label
-            d = depth_data.get(key)
-            if not d or d.get("mean") in ("NA", ""):
-                return "NA"
-            try:
-                return (
-                    f"{format_float_sigfigs(float(d['mean']), sf)} "
-                    f"({format_float_sigfigs(float(d['std']), sf)})"
-                )
-            except (ValueError, TypeError):
-                return "NA"
+rule get_template_depths:
+    params:
+        benchmark=lambda wc: wc.benchmark,
+        templates=lambda wc: config["benchmarks"][wc.benchmark]["templates"],
+        region=lambda wc: config["benchmarks"][wc.benchmark]["region"],
+    wildcard_constraints:
+        benchmark="^templated.*",
+    output:
+        depths="{benchmark}/template-depths.tsv",
+        list="{benchmark}/template-depths.list",
+    container:
+        "bench.sif",
+    resources:
+        cpus_per_task=cpus_per_task,
+        mem_mb=mem_mb,
+        runtime=runtime,
+    shell:
+        r"""
+        echo "{params.templates}" | tr ' ' '\n' > {output.list} &&
+        samtools depth -f {output.list} -r {params.region} -H -q 0 -Q 0 > {output.depths}
+        """
 
-        def format_consolidated_row(tool, rt, acc):
-            try:
-                wm, ws = float(rt["wall_mean"]), float(rt["wall_std"])
-                wall_str = f"{format_float_sigfigs(wm, sf)} ({format_float_sigfigs(ws, sf)})"
-            except (ValueError, TypeError):
-                wall_str = f"{rt['wall_mean']} ({rt['wall_std']})"
-            mem_str = (
-                f"{format_float_sigfigs(rt['mem_mean_gb'], sf)} "
-                f"({format_float_sigfigs(rt['mem_std_gb'], sf)})"
-            )
-            d_str = depth_cell(tool)
-            try:
-                mm, ms = acc.get("mae_mean"), acc.get("mae_std")
-                if mm in (None, "", "NA") or ms in (None, "", "NA"):
-                    mae_str = "NA"
-                else:
-                    mae_str = (
-                        f"{format_float_sigfigs(float(mm), sf)} "
-                        f"({format_float_sigfigs(float(ms), sf)})"
-                    )
-            except (ValueError, TypeError):
-                mae_str = "NA"
-            try:
-                sm, ss = acc.get("signed_depth_mean"), acc.get("signed_depth_std")
-                if sm in (None, "", "NA") or ss in (None, "", "NA"):
-                    signed_str = "NA"
-                else:
-                    signed_str = (
-                        f"{format_float_sigfigs(float(sm), sf)} "
-                        f"({format_float_sigfigs(float(ss), sf)})"
-                    )
-            except (ValueError, TypeError):
-                signed_str = "NA"
-            try:
-                wm1, ws1 = acc.get("w1_mean"), acc.get("w1_std")
-                if wm1 in (None, "", "NA") or ws1 in (None, "", "NA"):
-                    w1_str = "NA"
-                else:
-                    w1_str = (
-                        f"{format_float_sigfigs(float(wm1), sf)} "
-                        f"({format_float_sigfigs(float(ws1), sf)})"
-                    )
-            except (ValueError, TypeError):
-                w1_str = "NA"
-            return (
-                f"{tool}\t{wall_str}\t{mem_str}\t{coeff_str}\t{d_str}\t"
-                f"{mae_str}\t{signed_str}\t{w1_str}\n"
-            )
+rule get_template_depths_pass:
+    wildcard_constraints:
+        benchmark="^uniform.*",
+    output:
+        depths="{benchmark}/template-depths.tsv",
+        list="{benchmark}/template-depths.list",
+    shell:
+        """
+        touch {output.depths} &&
+        touch {output.list}
+        """
 
-        with open(output.consolidated, 'w') as out:
-            out.write(
-                "Tool\tWall Clock (s)\tMemory (GB)\tCoefficient\tDepth (samtools)\t"
-                "MAE\tMean signed depth diff\tW1\n"
-            )
-            if uses_uniform_samsample(wildcards.benchmark):
-                competitors = get_non_samsamplex_comparison_tools(wildcards.benchmark)
-                samx_rt = runtime_data.get(
-                    "samsampleX-uniform",
-                    {
-                        "wall_mean": "NA",
-                        "wall_std": "NA",
-                        "mem_mean_gb": 0.0,
-                        "mem_std_gb": 0.0,
-                    },
-                )
-                sorted_comp = sorted(
-                    [t for t in competitors if t in runtime_data],
-                    key=lambda t: float(runtime_data[t]["wall_mean"])
-                    if runtime_data[t]["wall_mean"] not in ["NA", ""]
-                    else 999,
-                )
-                for tool in sorted_comp:
-                    out.write(format_consolidated_row(tool, runtime_data[tool], {}))
-                # Standalone samsampleX row: own wall/mem, coefficient, samtools depth on
-                # samsampleX-uniform BAMs (vs-* rows above use ref-tool depth only).
-                if "samsampleX-uniform" in runtime_data:
-                    out.write(
-                        format_consolidated_row(
-                            "samsampleX-uniform",
-                            runtime_data["samsampleX-uniform"],
-                            {},
-                        )
-                    )
-                for ref_tool in competitors:
-                    label = f"samsampleX-vs-{ref_tool}"
-                    out.write(
-                        format_consolidated_row(
-                            label, samx_rt, accuracy_data.get(label, {})
-                        )
-                    )
-            else:
-                sorted_tools = sorted(
-                    runtime_data.keys(),
-                    key=lambda t: float(runtime_data[t]["wall_mean"])
-                    if runtime_data[t]["wall_mean"] not in ["NA", ""]
-                    else 999,
-                )
-                for tool in sorted_tools:
-                    out.write(
-                        format_consolidated_row(
-                            tool,
-                            runtime_data[tool],
-                            accuracy_data.get(tool, {}),
-                        )
-                    )
-
-
-# Depth comparison PNG/TSV via plot.py. Ad-hoc runs may use comparison_plot.sh instead.
-# No container: host Python needs matplotlib/pandas (same situation as rule results).
-# If using --use-singularity globally, disable the container for this rule or use run: with host env.
-rule comparison_plot:
+rule plot_templates:
     input:
-        master_seeds=MASTER_SEEDS_JSON,
-        consolidated="benchmark-{benchmark}.tsv",
-        template_bed=lambda wc: (
-            f"{wc.benchmark}/uniform-plot-template.bed"
-            if uses_uniform_samsample(wc.benchmark)
-            else f"{wc.benchmark}/samsampleX-template.bed"
-        ),
+        template_depths="{benchmark}/template-depths.tsv",
+        coding_bed=coding_sequence_annotations,
+    params:
+        region=lambda wc: config["benchmarks"][wc.benchmark]["region"],
+        templates=lambda wc: config["benchmarks"][wc.benchmark]["templates"],
+    output:
+        plot="{benchmark}/templates-plot.png",
+    container:
+        "bench.sif",
+    resources:
+        cpus_per_task=cpus_per_task,
+        mem_mb=mem_mb,
+        runtime=runtime,
+    run:
+        import pandas as pd
+        import matplotlib.pyplot as plt
+        import matplotlib.ticker as mtick
+
+        template_depths = pd.read_csv(input.template_depths, sep="\t")
+        positions = template_depths["POS"]
+        template_depths.drop(columns=["#CHROM", "POS"], inplace=True)
+
+        means = template_depths.mean(axis=1)
+        stds = template_depths.std(axis=1)
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        # Shaded ±1 std band
+        ax.fill_between(positions, means - stds, means + stds, color="lightgray", alpha=0.6, label="±1 SD")
+
+        # Mean depth line
+        ax.plot(positions, means, color="#8da0cb", linewidth=1.5, label="Mean depth")
+
+        # Horizontal grid only, sent behind the data
+        ax.yaxis.grid(True, linestyle="--", linewidth=0.6, color="gray", alpha=0.5)
+        ax.xaxis.grid(False)
+        ax.xaxis.get_major_formatter().set_useOffset(False)
+        ax.xaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+        ax.tick_params(axis='y', length=0)
+        ax.set_axisbelow(True)
+
+        # Remove top, left, and right spines
+        for spine in ("top", "left", "right"):
+            ax.spines[spine].set_visible(False)
+
+        ax.set_title("1000 Genomes WGS 30x depth variation across region")
+        ax.set_xlabel(r'Position along $\it{HLA\text{-}A}$ gene region (bp)')
+        ax.set_ylabel("Depth")
+        ax.legend(frameon=False)
+
+        add_coding_sequence_track(ax, params.region, input.coding_bed)
+
+        fig.savefig(output.plot, dpi=300, bbox_inches="tight")
+
+rule get_downsampling_results:
+    input:
         source_bam="{benchmark}/source.bam",
         source_index="{benchmark}/source.bam.bai",
-        tool_bams=get_plot_tool_bams,
-    output:
-        png="{benchmark}/{benchmark}-comparison.png",
-        tsv="{benchmark}/{benchmark}-comparison.tsv",
+        bams=expand("{{benchmark}}/downsampled-bams/{tool}-rep{rep}.bam", tool=config["parameters"]["tools"], rep=rep),
+        index=expand("{{benchmark}}/downsampled-bams/{tool}-rep{rep}.bam.bai", tool=config["parameters"]["tools"], rep=rep),
     params:
-        root=SAMSAMPLEX_ROOT,
-<<<<<<< HEAD
-        plot_replicate=1,
-=======
-        plot_seed=lambda wc: get_plot_seed(wc),
->>>>>>> 284611eecdaf5bda7043d645d3d6090cabbd71a5
-        config_relpath="benchmarks/config.yaml",
+        benchmark=lambda wc: wc.benchmark,
+        region=lambda wc: config["benchmarks"][wc.benchmark]["region"],
+    output:
+        list="{benchmark}/downsampling-results.list",
+        depths="{benchmark}/downsampling-results.tsv",
+    container:
+        "bench.sif",
     resources:
-        cpus=1,
-        mem_mb=16384,
-        time="1:00:00",
+        cpus_per_task=cpus_per_task,
+        mem_mb=mem_mb,
+        runtime=runtime,
     shell:
+        r"""
+        echo "{input.bams}" | tr ' ' '\n' > {output.list} &&
+        echo "{input.source_bam}" >> {output.list} &&
+        samtools depth -f {output.list} -r {params.region} -H -q 0 -Q 0 > {output.depths}
         """
-        cd {params.root} && python plot.py --config {params.config_relpath} --benchmark {wildcards.benchmark} --seed {params.plot_replicate} --output-dir benchmarks/{wildcards.benchmark}
-        """
+
+rule plot_downsampled_templated:
+    input:
+        downsampling_results="{benchmark}/downsampling-results.tsv",
+        template="{benchmark}/template.bed",
+        coding_bed=coding_sequence_annotations,
+    params:
+        benchmark=lambda wc: wc.benchmark,
+        region=lambda wc: config["benchmarks"][wc.benchmark]["region"],
+        tools=config["parameters"]["tools"],
+    wildcard_constraints:
+        benchmark="^templated.*",
+    output:
+        plot="{benchmark}/downsampling-results-plot.png",
+    container:
+        "bench.sif",
+    resources:
+        cpus_per_task=cpus_per_task,
+        mem_mb=32768,
+        runtime=runtime,
+    run:
+        import pandas as pd
+        import matplotlib.pyplot as plt
+        import matplotlib.ticker as mtick
+
+        downsampling_cols = pd.read_csv(input.downsampling_results, sep="\t", nrows=0).columns
+        positions = pd.read_csv(input.downsampling_results, sep="\t", usecols=[1])
+
+        styles = {
+            "source":               {"color": "#66c2a5", "linestyle": "-"},
+            "template":             {"color": "#fc8d62", "linestyle": "-"},
+            "gatk-constant-memory": {"color": "#bdbdbd", "linestyle": "--"},
+            "gatk-high-accuracy":   {"color": "#969696", "linestyle": "--"},
+            "gatk-chained":         {"color": "#737373", "linestyle": "--"},
+            "samtools":             {"color": "#636363", "linestyle": "--"},
+            "sambamba":             {"color": "#252525", "linestyle": "--"},
+            "samsampleX":           {"color": "#8da0cb", "linestyle": "-"},
+        }
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        source_depths = pd.read_csv(input.downsampling_results, sep="\t", usecols=[t for t in downsampling_cols if "source" in t])
+        ax.plot(positions, source_depths, label="source", linestyle=styles["source"]["linestyle"], color=styles["source"]["color"])
+
+        template_depths = pd.read_csv(input.template, sep="\t", usecols=[3], header=None)
+        ax.plot(positions, template_depths, label="template", linestyle=styles["template"]["linestyle"], color=styles["template"]["color"])
+
+        for tool in params.tools:
+            downsampling_depths = pd.read_csv(input.downsampling_results, sep="\t", usecols=[t for t in downsampling_cols if tool in t])
+            ax.plot(positions, downsampling_depths.mean(axis=1), label=tool, linestyle=styles[tool]["linestyle"], color=styles[tool]["color"])
+        ax.legend()
+
+        # Horizontal grid only, sent behind the data
+        ax.yaxis.grid(True, linestyle="--", linewidth=0.6, color="gray", alpha=0.5)
+        ax.xaxis.grid(False)
+        ax.set_axisbelow(True)
+
+        # Remove top, left, and right spines
+        for spine in ("top", "left", "right"):
+            ax.spines[spine].set_visible(False)
+
+        ax.set_title("Pattern-aware downsampling in Whole Exome Genome Sequencing")
+        ax.set_xlabel(r'Position along $\it{TP53}$ gene region (bp)')
+        ax.set_ylabel("Depth")
+        ax.xaxis.set_major_formatter(mtick.StrMethodFormatter('{x:,.0f}'))
+        ax.tick_params(axis='y', length=0)
+        ax.legend(loc="upper right", frameon=False)
+
+        add_coding_sequence_track(ax, params.region, input.coding_bed)
+
+        fig.savefig(output.plot, dpi=300)
+
+rule plot_downsampled_uniform:
+    input:
+        downsampling_results="{benchmark}/downsampling-results.tsv",
+        coding_bed=coding_sequence_annotations,
+    params:
+        benchmark=lambda wc: wc.benchmark,
+        region=lambda wc: config["benchmarks"][wc.benchmark]["region"],
+        target_depth=lambda wc: config["benchmarks"][wc.benchmark]["target_depth"],
+        tools=config["parameters"]["tools"],
+    wildcard_constraints:
+        benchmark="^uniform.*",
+    output:
+        plot="{benchmark}/downsampling-results-plot.png",
+    container:
+        "bench.sif",
+    resources:
+        cpus_per_task=cpus_per_task,
+        mem_mb=32768,
+        runtime=runtime,
+    run:
+        import pandas as pd
+        import matplotlib.pyplot as plt
+
+        downsampling_cols = pd.read_csv(input.downsampling_results, sep="\t", nrows=0).columns
+        positions = pd.read_csv(input.downsampling_results, sep="\t", usecols=[1])
+
+        styles = {
+            "source":               {"color": "#66c2a5", "linestyle": "-"},
+            "template":             {"color": "#fc8d62", "linestyle": "-"},
+            "gatk-constant-memory": {"color": "#bdbdbd", "linestyle": "--"},
+            "gatk-high-accuracy":   {"color": "#969696", "linestyle": "--"},
+            "gatk-chained":         {"color": "#737373", "linestyle": "--"},
+            "samtools":             {"color": "#636363", "linestyle": "--"},
+            "sambamba":             {"color": "#252525", "linestyle": "--"},
+            "samsampleX":           {"color": "#8da0cb", "linestyle": "-"},
+        }
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        source_depths = pd.read_csv(input.downsampling_results, sep="\t", usecols=[t for t in downsampling_cols if "source" in t])
+        ax.plot(positions, source_depths, label="source", linestyle=styles["source"]["linestyle"], color=styles["source"]["color"])
+
+        for tool in params.tools:
+            downsampling_depths = pd.read_csv(input.downsampling_results, sep="\t", usecols=[t for t in downsampling_cols if tool in t])
+            ax.plot(positions, downsampling_depths.mean(axis=1), label=tool, linestyle=styles[tool]["linestyle"], color=styles[tool]["color"])
+
+        ax.axhline(y=params.target_depth, color="red", linestyle="--", label="target depth")
+
+        # Horizontal grid only, sent behind the data
+        ax.yaxis.grid(True, linestyle="--", linewidth=0.6, color="gray", alpha=0.5)
+        ax.xaxis.grid(False)
+        ax.set_axisbelow(True)
+
+        # Remove top, left, and right spines
+        for spine in ("top", "left", "right"):
+            ax.spines[spine].set_visible(False)
+
+        ax.set_title("Downsampling results")
+        ax.set_xlabel("Position")
+        ax.set_ylabel("Depth")
+        ax.xaxis.get_major_formatter().set_useOffset(False)
+        ax.legend(loc="upper right", frameon=False)
+
+        add_coding_sequence_track(ax, params.region, input.coding_bed)
+
+        fig.savefig(output.plot, dpi=300)
+
+rule plot_boxplots:
+    input:
+        downsampling_results="{benchmark}/downsampling-results.tsv",
+    params:
+        benchmark=lambda wc: wc.benchmark,
+        tools=config["parameters"]["tools"],
+    output:
+        plot="{benchmark}/depths-boxplot.png",
+    container:
+        "bench.sif",
+    resources:
+        cpus_per_task=cpus_per_task,
+        mem_mb=mem_mb,
+        runtime=runtime,
+    run:
+        import pandas as pd
+        import matplotlib.pyplot as plt
+        import matplotlib.patches as mpatches
+        import numpy as np
+
+        data = {}
+
+        if wildcards.benchmark.startswith("templated"):
+            template_depths = pd.read_csv(f"{wildcards.benchmark}/template.bed", sep="\t", usecols=[3], header=None)
+            data["template"] = template_depths.iloc[:, 0].tolist()
+
+        downsampling_cols = pd.read_csv(input.downsampling_results, sep="\t", nrows=0).columns
+        for tool in params.tools:
+            tool_cols = [c for c in downsampling_cols if tool in c]
+            tool_depths = pd.read_csv(input.downsampling_results, sep="\t", usecols=tool_cols)
+            tool_depths["mean"] = tool_depths.mean(axis=1)
+            data[tool] = list(tool_depths["mean"])
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        ax.boxplot(
+            x=list(data.values()),
+            tick_labels=list(data.keys()),
+            patch_artist=True,
+            showfliers=False,
+            showmeans=True,
+            meanline=True,
+            medianprops=dict(color="red", linewidth=2, linestyle="-"),
+            meanprops=dict(color="black", linewidth=2, linestyle="-"),
+            whiskerprops=dict(linewidth=2),
+            capprops=dict(linewidth=0),
+            boxprops=dict(facecolor="steelblue", alpha=0.6),
+        )
+
+        ax.yaxis.grid(True, color="lightgray", linewidth=1)
+        ax.set_axisbelow(True)
+
+        for spine in ("top", "left", "right"):
+            ax.spines[spine].set_visible(False)
+
+        handles = [
+            mpatches.Patch(color="red", label="Median"),
+            mpatches.Patch(color="black", label="Mean"),
+        ]
+
+        ax.legend(handles=handles, loc="upper right")
+        fig.tight_layout()
+        fig.savefig(output.plot, dpi=300)
+        

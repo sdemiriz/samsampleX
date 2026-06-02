@@ -1,6 +1,8 @@
 build/
+dist/
 *egg-info/
 */__pycache__/
+
 
 # Test files
 *.cram
@@ -23,6 +25,8 @@ benchmarks/*.bai
 benchmarks/*.tsv
 benchmarks/*.bed
 benchmarks/*.sif
+benchmarks/templated*
+benchmarks/uniform*
 *.stats
 # Editor files
 *.swp
