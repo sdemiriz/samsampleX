@@ -8,7 +8,7 @@ authors = [
     {name = "Sedat Demiriz", email = "sedat.demiriz@mail.mcgill.ca"},
     {name = "Daniel Taliun", email = "daniel.taliun@mcgill.ca"},
 ]
-version = "0.1.0"
+version = "0.2.0"
 description = "Depth-aware dynamic BAM file downsampling"
 keywords = ["bam", "alignment", "downsampling", "sampling", "samtools", "sambamba", "gatk", "genome", "bioinformatics", "genomics"]
 requires-python = ">=3.9"
